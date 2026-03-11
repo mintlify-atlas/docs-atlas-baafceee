@@ -1,0 +1,96 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "Lead Intelligence Engine",
+  "projectDescription": "AI-powered lead qualification engine that extracts business data from URLs, enriches with RAG context, and categorizes into service offerings with automated CRM sync.",
+  "theme": "aspen",
+  "primaryColor": "#7c7c80",
+  "lightColor": "#151c28",
+  "darkColor": "#f2f2f2",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/rag-system",
+              "concepts/evaluation-pipeline",
+              "concepts/duplicate-detection"
+            ]
+          },
+          {
+            "group": "Usage Guides",
+            "pages": [
+              "guides/cli-usage",
+              "guides/telegram-bot",
+              "guides/configuration",
+              "guides/coda-integration"
+            ]
+          },
+          {
+            "group": "Knowledge Base",
+            "pages": [
+              "knowledge/services-catalog",
+              "knowledge/lead-criteria",
+              "knowledge/strategy-framework"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Components",
+            "pages": [
+              "api/lead-engine",
+              "api/evaluator",
+              "api/extractor",
+              "api/rag",
+              "api/coda-client"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "api/facebook-client",
+              "api/telegram-interface"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "AI-powered business evaluation using Groq LLM",
+    "RAG-enhanced context from knowledge base",
+    "Telegram bot interface for easy URL analysis",
+    "Automatic duplicate prevention in Coda CRM",
+    "Industry-specific service matching logic",
+    "Smart web content extraction with Jina fallback",
+    "Rate limiting and token usage tracking",
+    "Stateless architecture with <20s latency"
+  ],
+  "publicApiSurface": [
+    "LeadEngine.process_url()",
+    "Evaluator.evaluate()",
+    "Extractor.process()",
+    "RAG.retrieve()",
+    "CodaClient.insert_row()",
+    "CodaClient.fetch_row_by_url()",
+    "CLI: python main.py <url>",
+    "Telegram: /analyze <url>",
+    "Telegram: /model",
+    "Telegram: /status"
+  ]
+}
