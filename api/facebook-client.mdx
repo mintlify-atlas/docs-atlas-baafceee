@@ -1,0 +1,193 @@
+---
+title: 'Facebook Client'
+description: 'Facebook Page metadata extraction using Graph API'
+---
+
+## Overview
+
+The Facebook Client integration retrieves public page metadata using the Facebook Graph API v19.0. It does not use HTML scraping or login flows, and operates entirely through official API endpoints.
+
+## Authentication
+
+The client requires Facebook API credentials configured via environment variables:
+
+- `FACEBOOK_APP_ID` - Facebook App ID
+- `FACEBOOK_APP_SECRET` - Facebook App Secret  
+- `FACEBOOK_ACCESS_TOKEN` - (Optional) Access token. If not provided, will auto-generate using `{APP_ID}|{APP_SECRET}` format
+
+<Warning>
+Missing credentials will result in an error response. Ensure all required environment variables are set before making requests.
+</Warning>
+
+## Core Function
+
+### `get_facebook_page_data()`
+
+Retrieves public Facebook Page metadata for a given URL.
+
+<ParamField path="url" type="str" required>
+  Facebook page URL. Supports formats:
+  - `https://facebook.com/SomeBusiness`
+  - `https://www.facebook.com/SomeBusiness/`
+  
+  The function extracts the page identifier (username or ID) using regex pattern matching.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="platform" type="str">
+  Always returns `"facebook"`
+</ResponseField>
+
+<ResponseField name="page_id" type="str">
+  Unique Facebook Page ID from Graph API
+</ResponseField>
+
+<ResponseField name="name" type="str">
+  Business or page name
+</ResponseField>
+
+<ResponseField name="description" type="str">
+  Page description. Falls back from `about` field to `description` field
+</ResponseField>
+
+<ResponseField name="category" type="str">
+  Page category (e.g., "Local Business", "Restaurant")
+</ResponseField>
+
+<ResponseField name="followers" type="int">
+  Total follower count (from `fan_count` field)
+</ResponseField>
+
+<ResponseField name="website" type="str">
+  Associated website URL if provided on the page
+</ResponseField>
+
+<ResponseField name="source_url" type="str">
+  Original URL that was analyzed
+</ResponseField>
+
+<ResponseField name="text" type="str">
+  Synthesized text field for AI Evaluator compatibility. Combines all metadata into formatted string:
+  ```
+  Business Name: {name}
+  Category: {category}
+  About: {description}
+  Followers: {followers}
+  Website: {website}
+  ```
+</ResponseField>
+
+<ResponseField name="error" type="str">
+  Present only when an error occurs. Contains error message
+</ResponseField>
+
+#### Error Handling
+
+The function returns structured error responses instead of raising exceptions:
+
+**Missing Credentials**
+```json
+{
+  "platform": "facebook",
+  "error": "Missing Facebook API credentials (ID, Secret, or Token).",
+  "source_url": "https://facebook.com/example"
+}
+```
+
+**Invalid URL Format**
+```json
+{
+  "platform": "facebook",
+  "error": "Could not extract Page identifier from URL: {url}",
+  "source_url": "https://facebook.com/example"
+}
+```
+
+**Graph API Errors** (e.g., invalid page, permissions issues)
+```json
+{
+  "platform": "facebook",
+  "error": "Graph API Error (404): ...",
+  "source_url": "https://facebook.com/example"
+}
+```
+
+**Internal Errors**
+```json
+{
+  "platform": "facebook",
+  "error": "Internal Error: {exception_message}",
+  "source_url": "https://facebook.com/example"
+}
+```
+
+<Note>
+All errors are logged to `logs/extraction.log` with ERROR level severity.
+</Note>
+
+## Implementation Details
+
+### Graph API Request
+
+The function queries these specific fields from the Graph API:
+
+```python
+params = {
+    "fields": "id,name,about,description,category,fan_count,link,website",
+    "access_token": access_token
+}
+```
+
+### URL Pattern Matching
+
+Page identifier extraction uses regex:
+
+```python
+match = re.search(r"facebook\.com/([^/?#]+)", url)
+page_identifier = match.group(1).strip()
+```
+
+This pattern handles various URL formats and extracts the username or page ID segment.
+
+### Timeout Configuration
+
+Requests have a 10-second timeout:
+
+```python
+response = requests.get(graph_url, params=params, timeout=10)
+```
+
+<Warning>
+Graph API requests may fail due to rate limits, invalid access tokens, or page privacy settings. Always check for the `error` field in responses.
+</Warning>
+
+## Integration with Lead Engine
+
+The function integrates with the main extraction system by:
+
+1. Accepting URLs from the Lead Engine's URL router
+2. Returning normalized data structure compatible with AI Evaluator
+3. Providing `text` field for LLM analysis
+4. Maintaining consistent error format across all extractors
+
+## Example Usage
+
+```python
+from facebook_client import get_facebook_page_data
+
+url = "https://www.facebook.com/YourBusiness"
+result = get_facebook_page_data(url)
+
+if "error" in result:
+    print(f"Error: {result['error']}")
+else:
+    print(f"Business: {result['name']}")
+    print(f"Category: {result['category']}")
+    print(f"Followers: {result['followers']}")
+    print(f"Description: {result['description']}")
+```
+
+## Source Reference
+
+Implementation: `~/workspace/source/facebook_client.py:20`

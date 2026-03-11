@@ -1,0 +1,524 @@
+---
+title: 'Configuration'
+description: 'Configure the Lead Intelligence Engine with environment variables and service definitions'
+icon: 'gear'
+---
+
+## Overview
+
+The Lead Intelligence Engine uses a combination of environment variables (`.env` file) and JSON configuration files to customize behavior. This guide covers all configuration options.
+
+## Environment Variables
+
+All sensitive credentials and service endpoints are stored in a `.env` file in the project root.
+
+### Creating .env File
+
+Create a new file named `.env` in the `source/` directory:
+
+```bash
+touch .env
+```
+
+Add your configuration:
+
+```env .env
+# AI Service (Required)
+GROQ_API_KEY=your_groq_api_key_here
+
+# CRM Integration (Required)
+CODA_API_TOKEN=your_coda_api_token
+CODA_DOC_ID=your_coda_document_id
+CODA_TABLE_ID=your_coda_table_id
+
+# Telegram Bot (Optional - only for bot interface)
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+```
+
+<Warning>
+Never commit `.env` to version control. Add it to `.gitignore` to prevent accidental exposure of API keys.
+</Warning>
+
+### Required Variables
+
+These variables are **mandatory** for basic CLI functionality:
+
+#### GROQ_API_KEY
+
+**Purpose**: Authenticates with Groq's LLM API for business analysis
+
+**How to obtain**:
+1. Sign up at [groq.com](https://console.groq.com)
+2. Navigate to API Keys section
+3. Create a new API key
+4. Copy the key (starts with `gsk_`)
+
+**Format**: `gsk_...` (string)
+
+**Example**:
+```env
+GROQ_API_KEY=gsk_abcdefghijklmnopqrstuvwxyz1234567890
+```
+
+<Info>
+Groq offers a generous free tier. Monitor usage at [console.groq.com](https://console.groq.com) to avoid rate limits.
+</Info>
+
+#### CODA_API_TOKEN
+
+**Purpose**: Authenticates with Coda's API to read/write CRM data
+
+**How to obtain**:
+1. Go to [coda.io/account](https://coda.io/account)
+2. Scroll to "API Settings"
+3. Click "Generate API token"
+4. Copy the token
+
+**Format**: Long alphanumeric string
+
+**Example**:
+```env
+CODA_API_TOKEN=a1b2c3d4-e5f6-7890-abcd-ef1234567890
+```
+
+<Tip>
+Token permissions should include "Read" and "Write" access to your CRM document.
+</Tip>
+
+#### CODA_DOC_ID
+
+**Purpose**: Identifies which Coda document contains your CRM table
+
+**How to obtain**:
+1. Open your Coda CRM document
+2. Look at the URL: `https://coda.io/d/_dABCDEFGHI/...`
+3. The Doc ID is the part after `/d/`: `ABCDEFGHI`
+
+**Format**: Alphanumeric string (usually starts with underscore)
+
+**Example**:
+```env
+CODA_DOC_ID=_dABCDEFGHI
+```
+
+#### CODA_TABLE_ID
+
+**Purpose**: Identifies which table within the Coda document to write leads to
+
+**How to obtain**:
+1. Open your Coda document
+2. Right-click the table
+3. Select "Copy table link"
+4. The Table ID is the part after `/table/`: `grid-abc123`
+
+**Alternative method**: Use Coda API Explorer at [coda.io/developers/apis](https://coda.io/developers/apis)
+
+**Format**: Usually starts with `grid-`
+
+**Example**:
+```env
+CODA_TABLE_ID=grid-abc123xyz
+```
+
+### Optional Variables
+
+These variables are only needed for specific features:
+
+#### TELEGRAM_BOT_TOKEN
+
+**Purpose**: Enables the Telegram bot interface
+
+**Required for**: Running `telegram_bot.py` only (not needed for CLI)
+
+**How to obtain**:
+1. Message [@BotFather](https://t.me/botfather) on Telegram
+2. Send `/newbot` and follow instructions
+3. Copy the token provided
+
+**Format**: `<bot_id>:<token>`
+
+**Example**:
+```env
+TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
+```
+
+<Info>
+If you only use the CLI (`main.py`), you can omit this variable.
+</Info>
+
+## Service Configuration
+
+The engine's service offerings are defined in `services/services.json`. This file controls which services the AI can recommend.
+
+### File Structure
+
+```json services/services.json
+{
+  "technical_services": {
+    "services": [
+      {
+        "name": "Foundation Package",
+        "category": "Website Development",
+        "description": "1–3 page static website...",
+        "ideal_for": ["SMEs", "Personal Brands", "Startups"],
+        "use_case_signals": ["no website", "basic online presence"]
+      },
+      {
+        "name": "Custom Digital Solutions",
+        "category": "Advanced Development",
+        "description": "Corporate websites, web applications...",
+        "ideal_for": ["Enterprises", "E-commerce"],
+        "use_case_signals": ["complex operations", "internal systems needed"]
+      }
+    ]
+  },
+  "marketing_services": {
+    "services": [
+      {
+        "name": "Basic Marketing Package",
+        "focus": "Content + Branding foundation",
+        "ideal_for": ["New businesses"],
+        "use_case_signals": ["low posting frequency"]
+      },
+      {
+        "name": "Standard Marketing Package",
+        "focus": "Messaging + USP + Content Calendar",
+        "ideal_for": ["Growth-stage businesses"],
+        "use_case_signals": ["post-only strategy"]
+      },
+      {
+        "name": "Premium Marketing Package",
+        "focus": "Deep Analysis + Motion Content",
+        "ideal_for": ["High-ticket services"],
+        "use_case_signals": ["high engagement but low conversion"]
+      },
+      {
+        "name": "Enterprise Marketing Package",
+        "focus": "Full Strategy + Roadmap",
+        "ideal_for": ["Large corporations"],
+        "use_case_signals": ["multi-channel needs"]
+      }
+    ]
+  }
+}
+```
+
+### Customizing Services
+
+<Steps>
+  <Step title="Backup Original File">
+    ```bash
+    cp services/services.json services/services.json.backup
+    ```
+  </Step>
+  
+  <Step title="Edit services.json">
+    Add, remove, or modify service definitions. Each service requires:
+    
+    - `name`: Unique service identifier (used in AI output)
+    - `category` or `focus`: Service classification
+    - `ideal_for`: Target customer types
+    - `use_case_signals`: Keywords the AI uses to match businesses
+  </Step>
+  
+  <Step title="Validate JSON">
+    ```bash
+    python -m json.tool services/services.json
+    ```
+    
+    Should output formatted JSON without errors.
+  </Step>
+  
+  <Step title="Test Changes">
+    Run a test analysis:
+    ```bash
+    python main.py https://example.com
+    ```
+    
+    Verify the AI selects from your new service list.
+  </Step>
+</Steps>
+
+<Warning>
+The AI will **only** select services present in `services.json`. If it tries to suggest an unlisted service, the evaluator will raise a validation error.
+</Warning>
+
+### Adding New Services
+
+Example: Adding a "Maintenance Package":
+
+```json
+{
+  "technical_services": {
+    "services": [
+      // ... existing services ...
+      {
+        "name": "Maintenance Package",
+        "category": "Website Maintenance",
+        "description": "Monthly updates, security patches, content changes, and performance monitoring",
+        "ideal_for": ["Existing website owners", "Busy businesses"],
+        "use_case_signals": [
+          "outdated plugins",
+          "security vulnerabilities",
+          "slow loading times",
+          "needs regular updates"
+        ]
+      }
+    ]
+  }
+}
+```
+
+The AI will automatically start suggesting this service when it detects matching signals.
+
+## Knowledge Base Setup
+
+The `knowledge/` directory contains RAG (Retrieval-Augmented Generation) context files that enrich AI analysis.
+
+### Directory Structure
+
+```
+source/
+  └── knowledge/
+      ├── lead_criteria.txt
+      ├── service_descriptions.md
+      └── industry_insights.md
+```
+
+### How RAG Works
+
+1. Website content is extracted
+2. RAG system searches `knowledge/` for relevant context
+3. Context is injected into the AI prompt
+4. AI uses both website content + knowledge base to make decisions
+
+### Adding Knowledge Files
+
+<Steps>
+  <Step title="Create a Text File">
+    ```bash
+    touch knowledge/my_criteria.txt
+    ```
+  </Step>
+  
+  <Step title="Add Content">
+    Write in plain text or markdown. Example:
+    
+    ```markdown knowledge/my_criteria.txt
+    # Lead Qualification Criteria
+    
+    Prioritize businesses that:
+    - Have been operating for 2+ years
+    - Show consistent social media activity
+    - Have outdated websites (pre-2020 design patterns)
+    - Are local service businesses (plumbing, HVAC, landscaping)
+    
+    Avoid:
+    - Marketing agencies (conflict of interest)
+    - Tech companies with modern sites
+    - Businesses with recent website redesigns
+    ```
+  </Step>
+  
+  <Step title="Test RAG Retrieval">
+    The `rag.py` module automatically indexes all files in `knowledge/`. No configuration needed.
+  </Step>
+</Steps>
+
+<Tip>
+RAG retrieval is best-effort. If it fails (e.g., empty directory), the engine continues without context. Check logs for `RAG retrieval partially failed` warnings.
+</Tip>
+
+## System Prompt Configuration
+
+The system prompt (`prompts/system_prompt.md`) defines how the AI evaluates businesses.
+
+### Default Prompt
+
+```markdown prompts/system_prompt.md
+# Lead Intelligence Engine System Prompt
+
+You are an expert business analyst and lead qualification assistant...
+
+## Analysis Rules
+1. **Business Name**: Extract the official name...
+2. **Business Type**: Identify what the business does...
+3. **Maturity Check & Industry Exclusions**:
+   - If the business is a "Digital Marketing Agency"... NEVER suggest "Marketing Services"
+   - If the business is "Software Development"... NEVER suggest "Technology Services"
+4. **Primary Service Selection**: Choose the single most relevant service...
+5. **Fit Score**: Assign a score from 0-100...
+...
+```
+
+### Customizing the Prompt
+
+<Accordion title="Example: Adjusting Exclusion Rules">
+  ```markdown prompts/system_prompt.md
+  ## Analysis Rules
+  ...
+  3. **Maturity Check & Industry Exclusions**:
+     - If the business is a "Restaurant" or "Food Service", NEVER suggest "E-commerce Solutions"
+     - If the business already has a modern website (post-2022 design), prioritize "Marketing Services" over "Foundation Package"
+     - If the business is "Non-profit" or "NGO", apply 20% discount consideration in reasoning
+  ...
+  ```
+</Accordion>
+
+<Accordion title="Example: Adding Scoring Criteria">
+  ```markdown prompts/system_prompt.md
+  ## Analysis Rules
+  ...
+  6. **Fit Score**: Assign a score from 0-100 based on:
+     - 40 points: Service-business match quality
+     - 30 points: Business maturity and readiness
+     - 20 points: Budget likelihood (inferred from business size)
+     - 10 points: Urgency indicators (outdated site, no online presence)
+  ...
+  ```
+</Accordion>
+
+<Warning>
+Changes to the system prompt directly affect AI behavior. Test thoroughly with representative URLs before deploying to production.
+</Warning>
+
+### Prompt Injection Guards
+
+The prompt includes guardrails to prevent hallucinations:
+
+```markdown
+## Constraints
+- **Strict JSON**: You MUST output only a valid JSON object.
+- **Service Source of Truth**: You MUST only select services from services.json.
+- **No Hallucinations**: If content is sparse, assume social-media-only business.
+- **Exactly One Primary**: You cannot select multiple primary services.
+```
+
+Keep these constraints in place to ensure reliable output.
+
+## Model Configuration
+
+The LLM model is hardcoded in `evaluator.py` but can be changed:
+
+### Current Model
+
+```python evaluator.py
+class Evaluator:
+    def __init__(self, model="llama-3.3-70b-versatile"):
+        # ...
+```
+
+### Changing the Model
+
+Edit `evaluator.py:23`:
+
+```python
+def __init__(self, model="llama-3.1-70b-versatile"):  # Changed model
+```
+
+Supported Groq models:
+- `llama-3.3-70b-versatile` (default, best balance)
+- `llama-3.1-70b-versatile` (faster, slightly less accurate)
+- `mixtral-8x7b-32768` (larger context window)
+- `gemma2-9b-it` (smaller, faster, lower cost)
+
+View all models: [console.groq.com/docs/models](https://console.groq.com/docs/models)
+
+<Tip>
+Smaller models (gemma2-9b-it) use fewer tokens but may produce less accurate analysis. Test with your specific use case.
+</Tip>
+
+## Validation
+
+Verify your configuration is correct:
+
+### Environment Variables
+
+```python validate_env.py
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+required = ["GROQ_API_KEY", "CODA_API_TOKEN", "CODA_DOC_ID", "CODA_TABLE_ID"]
+optional = ["TELEGRAM_BOT_TOKEN"]
+
+print("Required Variables:")
+for var in required:
+    value = os.getenv(var)
+    status = "✓ Set" if value else "✗ Missing"
+    print(f"  {var}: {status}")
+
+print("\nOptional Variables:")
+for var in optional:
+    value = os.getenv(var)
+    status = "✓ Set" if value else "- Not set"
+    print(f"  {var}: {status}")
+```
+
+Run:
+```bash
+python validate_env.py
+```
+
+### Service Configuration
+
+```bash
+python -c "import json; json.load(open('services/services.json')); print('✓ Valid JSON')"
+```
+
+### Full System Test
+
+```bash
+python main.py https://example.com
+```
+
+Should complete without errors (may skip duplicate if already analyzed).
+
+## Troubleshooting
+
+### "GROQ_API_KEY not found in environment variables"
+
+Your `.env` file is missing or not being loaded:
+
+1. Verify `.env` exists in the same directory as `main.py`
+2. Check file contents (should have `GROQ_API_KEY=...`)
+3. Ensure no extra spaces around `=` sign
+4. Restart your terminal/IDE to reload environment
+
+### "Coda configuration is incomplete"
+
+One or more Coda variables are missing:
+
+```bash
+python -c "from dotenv import load_dotenv; import os; load_dotenv(); print('CODA_API_TOKEN:', bool(os.getenv('CODA_API_TOKEN'))); print('CODA_DOC_ID:', bool(os.getenv('CODA_DOC_ID'))); print('CODA_TABLE_ID:', bool(os.getenv('CODA_TABLE_ID')))"
+```
+
+All three should print `True`.
+
+### "Failed to load services from services/services.json"
+
+1. Verify file exists: `ls services/services.json`
+2. Check for JSON syntax errors: `python -m json.tool services/services.json`
+3. Ensure file is readable: `cat services/services.json`
+
+### "Selected primary service 'X' is not in the approved list"
+
+The AI tried to suggest a service not in `services.json`. This indicates:
+
+1. The system prompt references services not in `services.json`
+2. The AI hallucinated a service name
+
+Fix: Ensure all services mentioned in `prompts/system_prompt.md` exist in `services/services.json` with exact name matches.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="CLI Usage" icon="terminal" href="/guides/cli-usage">
+    Start analyzing leads with the command-line interface
+  </Card>
+  
+  <Card title="Coda Integration" icon="table" href="/guides/coda-integration">
+    Set up your CRM to receive analyzed leads
+  </Card>
+</CardGroup>

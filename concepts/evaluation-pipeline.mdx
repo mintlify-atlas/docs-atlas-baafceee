@@ -1,0 +1,578 @@
+---
+title: "Evaluation Pipeline"
+description: "How the AI analyzes businesses and matches services"
+---
+
+## Overview
+
+The evaluation pipeline is the **intelligence core** of the Lead Intelligence Engine. It uses Groq's LLM (llama-3.3-70b-versatile) to analyze extracted website content, enrich it with RAG context, and produce structured business intelligence.
+
+<Info>
+Think of this as an AI-powered business analyst that reads a website, applies your domain expertise, and writes a qualification report.
+</Info>
+
+## Pipeline Stages
+
+<Steps>
+  <Step title="Service Catalog Loading">
+    Loads `services/services.json` to understand available offerings.
+  </Step>
+  <Step title="System Prompt Loading">
+    Loads `prompts/system_prompt.md` with evaluation rules and JSON schema.
+  </Step>
+  <Step title="Context Enrichment">
+    Injects service catalog and RAG context into the system prompt.
+  </Step>
+  <Step title="LLM Inference">
+    Sends formatted prompt to Groq with `response_format: json_object`.
+  </Step>
+  <Step title="Response Parsing">
+    Extracts JSON from LLM response, handling edge cases.
+  </Step>
+  <Step title="Service Validation">
+    Ensures selected services exist in the catalog.
+  </Step>
+  <Step title="Token Tracking">
+    Records usage metadata for cost monitoring.
+  </Step>
+</Steps>
+
+## System Prompt
+
+The prompt is stored in `prompts/system_prompt.md` and defines the AI's role:
+
+```markdown system_prompt.md (excerpt)
+# Lead Intelligence Engine System Prompt
+
+You are an expert business analyst and lead qualification assistant.
+
+## Objective
+Extract the business name, type, and select ONE primary service and ONE 
+optional secondary service from the provided list that best fits the 
+business's needs.
+
+## Analysis Rules
+1. **Business Name**: Extract the official name from the website.
+2. **Business Type**: Identify what the business does.
+3. **Maturity Check & Industry Exclusions**:
+   - Marketing agencies: NEVER suggest Marketing Services
+   - Dev shops: NEVER suggest Technology Services
+4. **Primary Service Selection**: Match based on ideal_for and use_case_signals
+5. **Fit Score**: 0-100 based on service-business alignment
+6. **Reasoning**: Max 2 sentences explaining the match
+7. **Outreach Angle**: Strategic entry point for conversation
+```
+
+### Industry Exclusion Logic
+
+Critical business rules embedded in the prompt:
+
+<Accordion title="Marketing Agencies">
+  ```markdown
+  If the business is a "Digital Marketing Agency" or similar 
+  (Marketing, Ads, Branding), NEVER suggest "Marketing Services" 
+  or "Marketing Packages". Focus on "Technology Services" 
+  (Foundation/Custom Dev) ONLY if their own website is weak/missing.
+  ```
+  
+  **Reasoning**: Don't sell marketing to marketers. They already know how to market.
+</Accordion>
+
+<Accordion title="Software/IT Companies">
+  ```markdown
+  If the business is "Software Development", "IT Solutions", or 
+  "Tech Agency", NEVER suggest "Technology Services". Focus on 
+  "Marketing Services" or "Strategy" only.
+  ```
+  
+  **Reasoning**: Don't sell dev services to developers. They can build their own tech.
+</Accordion>
+
+<Accordion title="Existing Websites">
+  ```markdown
+  If they already have a functional website, prioritize Add-ons 
+  or Marketing instead of a new website.
+  ```
+  
+  **Reasoning**: Don't replace what's already working - optimize or augment instead.
+</Accordion>
+
+## Prompt Construction
+
+The evaluator dynamically builds the prompt:
+
+```python evaluator.py (lines 63-73)
+services = self._load_services()
+system_prompt = self._load_prompt()
+
+# Inject service catalog into system prompt
+formatted_system_prompt = system_prompt.replace(
+    "[SERVICES_JSON]", 
+    json.dumps(services, indent=2)
+)
+
+# Build user message with RAG context
+user_content = f"Analyze this website content and provide the evaluation in JSON:\n\n{content}"
+if rag_context:
+    rag_text = "\n\n".join(rag_context)
+    user_content = f"Additional Advisory Context (RAG):\n{rag_text}\n\n---\n\n{user_content}"
+```
+
+### Final Prompt Structure
+
+**System Message**:
+```
+[System Prompt from file]
+
+Available Services:
+{
+  "technical_services": { ... },
+  "marketing_services": { ... }
+}
+```
+
+**User Message**:
+```
+Additional Advisory Context (RAG):
+[Lead qualification criteria]
+[Strategy framework]
+
+---
+
+Analyze this website content and provide the evaluation in JSON:
+
+[Extracted website text...]
+```
+
+## LLM Configuration
+
+Groq API parameters:
+
+```python evaluator.py (lines 78-86)
+completion = self.client.chat.completions.create(
+    model=self.model,  # llama-3.3-70b-versatile
+    messages=[
+        {"role": "system", "content": formatted_system_prompt},
+        {"role": "user", "content": user_content}
+    ],
+    temperature=0.1,  # Low temperature for consistency
+    response_format={"type": "json_object"}  # Enforce JSON output
+)
+```
+
+<ParamField path="model" type="string" default="llama-3.3-70b-versatile">
+  Groq model ID. Configurable via constructor.
+</ParamField>
+
+<ParamField path="temperature" type="float" default="0.1">
+  Low temperature (0.1) ensures consistent, deterministic output. Higher values increase creativity but reduce reliability.
+</ParamField>
+
+<ParamField path="response_format" type="object">
+  `{"type": "json_object"}` forces the model to output valid JSON. Reduces parsing errors.
+</ParamField>
+
+## Response Parsing
+
+The evaluator handles various response formats:
+
+```python evaluator.py (lines 89-96)
+content_str = completion.choices[0].message.content
+
+# Handle markdown code blocks
+if "```json" in content_str:
+    content_str = content_str.split("```json")[1].split("```")[0].strip()
+# Extract JSON object
+elif "{" in content_str:
+    content_str = content_str[content_str.find("{"):content_str.rfind("}")+1]
+
+result = json.loads(content_str)
+```
+
+<Warning>
+Even with `response_format: json_object`, Groq sometimes wraps JSON in markdown. The parser handles this gracefully.
+</Warning>
+
+## Service Validation
+
+After parsing, the evaluator validates service names:
+
+```python evaluator.py (lines 119-130)
+valid_service_names = self._get_all_service_names(services)
+
+# Validate Primary
+if result.get("primary_service") not in valid_service_names:
+    raise ValueError(f"Selected primary service '{result.get('primary_service')}' is not in the approved list.")
+
+# Validate Secondary (if present)
+secondary = result.get("secondary_service")
+if secondary and secondary not in valid_service_names:
+    raise ValueError(f"Selected secondary service '{secondary}' is not in the approved list.")
+```
+
+### Service Name Extraction
+
+Recursively extracts all `name` fields from nested service structure:
+
+```python evaluator.py (lines 48-59)
+def _get_all_service_names(self, services_obj):
+    """Recursively extracts all 'name' fields."""
+    names = []
+    if isinstance(services_obj, dict):
+        if "name" in services_obj:
+            names.append(services_obj["name"])
+        for value in services_obj.values():
+            names.extend(self._get_all_service_names(value))
+    elif isinstance(services_obj, list):
+        for item in services_obj:
+            names.extend(self._get_all_service_names(item))
+    return names
+```
+
+**Example**:
+```json
+{
+  "technical_services": {
+    "services": [
+      {"name": "Foundation Package"},
+      {"name": "Custom Digital Solutions"}
+    ]
+  }
+}
+```
+
+**Extracted Names**:
+- "Foundation Package"
+- "Custom Digital Solutions"
+
+## Output Schema
+
+The AI returns a structured JSON object:
+
+```json
+{
+  "business_name": "Example Dental Clinic",
+  "business_type": "Dental Healthcare Provider",
+  "primary_service": "Foundation Package",
+  "secondary_service": "Basic Marketing Package",
+  "fit_score": 85,
+  "reasoning": "Small clinic with Facebook-only presence. No website detected. High fit for Foundation Package per target criteria.",
+  "outreach_angle": "Platform dependency risk - current growth relies on rented Facebook platform. Consider owned digital asset for long-term stability."
+}
+```
+
+<ResponseField name="business_name" type="string" required>
+  Official name extracted from website content.
+</ResponseField>
+
+<ResponseField name="business_type" type="string" required>
+  What the business does (e.g., "E-commerce Fashion Store", "SaaS for HR").
+</ResponseField>
+
+<ResponseField name="primary_service" type="string" required>
+  Best-fit service from catalog. Must match a `name` field in `services.json`.
+</ResponseField>
+
+<ResponseField name="secondary_service" type="string | null">
+  Optional complementary service for upsell.
+</ResponseField>
+
+<ResponseField name="fit_score" type="integer" required>
+  Confidence score from 0-100 indicating service-business alignment.
+</ResponseField>
+
+<ResponseField name="reasoning" type="string" required>
+  1-2 sentence explanation of why this service was selected.
+</ResponseField>
+
+<ResponseField name="outreach_angle" type="string" required>
+  Strategic entry point for sales conversation based on detected gaps.
+</ResponseField>
+
+## Token Tracking
+
+The evaluator tracks token usage for cost monitoring:
+
+```python evaluator.py (lines 100-110)
+usage = completion.usage
+result["_usage"] = {
+    "prompt_tokens": usage.prompt_tokens,
+    "completion_tokens": usage.completion_tokens,
+    "total_tokens": usage.total_tokens
+}
+
+# Track cumulative totals (class-level)
+self.total_usage["prompt_tokens"] += usage.prompt_tokens
+self.total_usage["completion_tokens"] += usage.completion_tokens
+self.total_usage["total_tokens"] += usage.total_tokens
+```
+
+### Token Breakdown
+
+Typical usage per analysis:
+
+| Component | Tokens | Notes |
+|-----------|--------|-------|
+| System Prompt | ~500 | Includes service catalog |
+| Website Content | 1,500-3,000 | Depends on site complexity |
+| RAG Context | ~500 | Lead criteria + strategy |
+| **Prompt Total** | **2,500-4,000** | | |
+| Completion | 200-400 | JSON response |
+| **Grand Total** | **2,700-4,400** | |
+
+<Tip>
+At Groq's free tier pricing, each analysis costs approximately $0.0003-$0.0005.
+</Tip>
+
+## Error Handling
+
+### Retry Logic
+
+The evaluator retries once on transient failures:
+
+```python evaluator.py (lines 76, 143-149)
+attempts = 0
+while attempts <= retry_count:  # retry_count=1 by default
+    try:
+        # ... LLM call ...
+        return result
+    except Exception as e:
+        attempts += 1
+        if attempts > retry_count:
+            raise e
+        logger.warning(f"Retry {attempts}/{retry_count} due to: {e}")
+```
+
+### Rate Limit Detection
+
+```python evaluator.py (lines 138-141)
+if "rate_limit" in str(e).lower() or "quota" in str(e).lower():
+    Evaluator.quota_ok = False
+    Evaluator.status = "Rate Limited / Quota Reached"
+```
+
+Class-level status tracking allows the Telegram bot's `/status` command to display rate limit state.
+
+### Common Errors
+
+<AccordionGroup>
+  <Accordion title="Invalid JSON">
+    **Error**: `LLM returned invalid JSON: Expecting property name enclosed in double quotes`
+    
+    **Cause**: Despite `json_object` mode, model occasionally returns malformed JSON.
+    
+    **Mitigation**: Parser extracts JSON from markdown blocks and braces.
+  </Accordion>
+  
+  <Accordion title="Invalid Service Name">
+    **Error**: `Selected primary service 'Web Development' is not in the approved list`
+    
+    **Cause**: AI hallucinated a service name not in `services.json`.
+    
+    **Mitigation**: Validation step catches this before returning to user. System prompt emphasizes "MUST only select services from the provided list."
+  </Accordion>
+  
+  <Accordion title="Rate Limit Exceeded">
+    **Error**: `AI Service (Groq) Error: rate_limit_exceeded`
+    
+    **Cause**: Groq free tier has 7,000 RPD (requests per day) limit.
+    
+    **Mitigation**: Retry logic + class-level status flag. Telegram bot displays quota status.
+  </Accordion>
+</AccordionGroup>
+
+## Service Matching Logic
+
+The AI matches businesses to services using:
+
+### 1. `ideal_for` Field
+
+Target customer profiles:
+
+```json services.json (excerpt)
+{
+  "name": "Foundation Package",
+  "ideal_for": [
+    "SMEs",
+    "Personal Brands",
+    "Startups",
+    "Local manual businesses"
+  ]
+}
+```
+
+If business is a "small local restaurant", matches "Local manual businesses".
+
+### 2. `use_case_signals` Field
+
+Website indicators:
+
+```json
+{
+  "name": "Foundation Package",
+  "use_case_signals": [
+    "no website",
+    "basic online presence",
+    "facebook-only business",
+    "outdated design"
+  ]
+}
+```
+
+If extracted content is &lt;200 chars (likely Facebook-only), triggers "Foundation Package".
+
+### 3. Fit Scoring
+
+The AI assigns 0-100 confidence based on:
+- Strong signal match → 80-95
+- Moderate match → 60-79
+- Weak/speculative → 40-59
+- Poor fit → &lt;40
+
+<Info>
+Scores below 60 are rare because the evaluation only runs on URLs likely to be valid businesses.
+</Info>
+
+## Customization
+
+### Changing the Model
+
+```python
+from evaluator import Evaluator
+
+# Use a different Groq model
+evaluator = Evaluator(model="llama-3.1-70b-versatile")
+result = evaluator.evaluate(content)
+```
+
+Supported Groq models:
+- `llama-3.3-70b-versatile` (default) - Best balance of speed and quality
+- `llama-3.1-70b-versatile` - Alternative 70B model
+- `mixtral-8x7b-32768` - Faster but less accurate
+
+### Modifying the System Prompt
+
+Edit `prompts/system_prompt.md` to change:
+- Output schema (add new fields)
+- Evaluation rules (change exclusion logic)
+- Tone and language
+
+<Warning>
+Changing the output schema requires updating `CodaClient` column mapping and validation logic.
+</Warning>
+
+<Card title="Configuration Guide" icon="gear" href="/guides/configuration">
+  Full guide on customizing prompts and services
+</Card>
+
+## Real-World Example
+
+### Input
+
+**URL**: `https://example-dental-clinic.com`
+
+**Extracted Content** (via Extractor):
+```
+Smile Bright Dental - Bangkok's Premier Dental Clinic
+
+Services:
+- General Dentistry
+- Teeth Whitening
+- Orthodontics
+
+Contact: facebook.com/smilebrightbkk
+```
+
+**RAG Context** (via RAG):
+```markdown
+Geography: Bangkok (target market)
+
+Industry: Medical - Dental clinics
+
+Digital Maturity Framework:
+- Asset Ownership: Facebook-only presence = platform dependency risk
+
+Conversation Angle: Platform Dependency Risk
+- Trigger: No owned domain, Facebook-only
+- Framing: "Current growth relies on rented platforms"
+```
+
+### Processing
+
+**Formatted Prompt** (sent to Groq):
+```
+SYSTEM: You are an expert business analyst...
+[Analysis rules]
+[Service catalog with Foundation Package, Marketing Packages]
+
+USER: Additional Advisory Context (RAG):
+[Lead criteria]
+[Strategy framework]
+
+Analyze this website content and provide the evaluation in JSON:
+
+Smile Bright Dental - Bangkok's Premier Dental Clinic
+Services: General Dentistry, Teeth Whitening...
+```
+
+### Output
+
+```json
+{
+  "business_name": "Smile Bright Dental",
+  "business_type": "Dental Healthcare Provider",
+  "primary_service": "Foundation Package",
+  "secondary_service": "Basic Marketing Package",
+  "fit_score": 88,
+  "reasoning": "Bangkok-based dental clinic (target geography) with Facebook-only presence. No owned website detected. High fit for Foundation Package to establish digital asset ownership.",
+  "outreach_angle": "Platform dependency risk - current patient acquisition relies entirely on rented Facebook platform. Consider owned digital asset for long-term stability and SEO visibility.",
+  "_usage": {
+    "prompt_tokens": 3247,
+    "completion_tokens": 312,
+    "total_tokens": 3559
+  }
+}
+```
+
+**Analysis**:
+- ✅ Correctly identified Bangkok location
+- ✅ Applied platform dependency angle from RAG
+- ✅ Matched Foundation Package using "facebook-only" signal
+- ✅ Added complementary Marketing Package for upsell
+- ✅ High fit score (88) reflects strong signal match
+
+## Performance Tuning
+
+### Reduce Token Usage
+
+1. **Truncate website content**: Already implemented (10,000 char limit)
+2. **Limit RAG results**: Change `limit=3` to `limit=2` in `rag.retrieve()`
+3. **Simplify system prompt**: Remove verbose examples
+
+### Improve Accuracy
+
+1. **Add more examples** to system prompt
+2. **Enrich knowledge base** with industry-specific criteria
+3. **Increase temperature** (0.1 → 0.3) for more creative angles
+
+### Speed Optimization
+
+- Groq inference: ~4-8s (cannot optimize)
+- Use `mixtral-8x7b` model for faster responses (-50% latency, -10% accuracy)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="RAG System" icon="books" href="/concepts/rag-system">
+    Learn how knowledge retrieval enhances evaluation
+  </Card>
+  <Card title="Services Catalog" icon="list" href="/knowledge/services-catalog">
+    Explore available services and matching signals
+  </Card>
+  <Card title="Evaluator API" icon="code" href="/api/evaluator">
+    Programmatic usage of the evaluation engine
+  </Card>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Customize prompts, models, and services
+  </Card>
+</CardGroup>

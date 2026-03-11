@@ -1,0 +1,133 @@
+---
+title: "Introduction"
+description: "Overview of the Lead Intelligence Engine - AI-powered lead qualification for agency workflows"
+---
+
+## What is the Lead Intelligence Engine?
+
+The Lead Intelligence Engine is an **AI-powered lead qualification system** designed for internal agency use. It analyzes business websites, enriches the analysis with domain knowledge, and automatically qualifies leads into your CRM.
+
+<Info>
+This is a **stateless, Python-based engine** optimized for speed (sub-20 second latency) and accuracy through RAG-enhanced AI evaluation.
+</Info>
+
+## How It Works
+
+The engine processes business URLs through a four-stage pipeline:
+
+<Steps>
+  <Step title="Web Extraction">
+    Fetches and cleans HTML content from the target URL using BeautifulSoup with intelligent fallback to Jina for SPAs.
+  </Step>
+  <Step title="RAG Enrichment">
+    Retrieves relevant context from your knowledge base (lead criteria, strategy frameworks, service definitions).
+  </Step>
+  <Step title="AI Evaluation">
+    Groq LLM analyzes the business, matches services, scores fit, and generates outreach angles.
+  </Step>
+  <Step title="CRM Sync">
+    Automatically inserts qualified leads into Coda with duplicate prevention.
+  </Step>
+</Steps>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="AI-Powered Analysis" icon="brain">
+    Uses Groq LLM (llama-3.3-70b-versatile) with custom prompts for accurate business categorization.
+  </Card>
+  <Card title="RAG Context" icon="books">
+    Enriches evaluation with domain knowledge from your knowledge base for better accuracy.
+  </Card>
+  <Card title="Duplicate Prevention" icon="shield-check">
+    Automatically checks Coda CRM by URL to prevent duplicate entries.
+  </Card>
+  <Card title="Multi-Interface" icon="terminal">
+    Available as CLI for batch processing and Telegram bot for interactive analysis.
+  </Card>
+  <Card title="Industry Rules" icon="filter">
+    Smart exclusion logic prevents selling redundant services (e.g., no marketing to marketing agencies).
+  </Card>
+  <Card title="Token Tracking" icon="chart-line">
+    Displays AI token consumption for cost monitoring and quota management.
+  </Card>
+</CardGroup>
+
+## Who Is This For?
+
+<AccordionGroup>
+  <Accordion title="Sales Teams">
+    Qualify inbound leads instantly by analyzing their business website. Get fit scores, service recommendations, and outreach angles automatically.
+  </Accordion>
+  <Accordion title="Business Development">
+    Research prospects at scale by processing lists of URLs. Build intelligence profiles for outreach campaigns.
+  </Accordion>
+  <Accordion title="Account Managers">
+    Identify upsell opportunities by analyzing existing client websites for service gaps and maturity improvements.
+  </Accordion>
+  <Accordion title="Marketing Operations">
+    Segment prospects by digital maturity, industry type, and service fit for targeted campaigns.
+  </Accordion>
+</AccordionGroup>
+
+## Architecture Overview
+
+The Lead Intelligence Engine is built with a **modular, stateless architecture**:
+
+```
+┌─────────────┐
+│   Input     │  CLI or Telegram Bot
+│   (URL)     │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│ LeadEngine  │  Orchestrates pipeline
+│   (core)    │
+└──────┬──────┘
+       │
+       ├──► Extractor ──► Web scraping + Jina fallback
+       │
+       ├──► RAG ──────── Knowledge retrieval
+       │
+       ├──► Evaluator ─► Groq LLM + service matching
+       │
+       └──► CodaClient ► Duplicate check + insert
+```
+
+<Note>
+Every URL is analyzed fresh - no caching. This ensures up-to-date analysis but means repeated URLs will consume tokens each time.
+</Note>
+
+## Performance Characteristics
+
+- **Latency Target**: < 20 seconds per URL
+- **Token Usage**: ~2,000-5,000 tokens per analysis (varies by website size)
+- **Rate Limits**: Telegram bot enforces 3 requests per minute per user
+- **Concurrency**: Stateless design allows parallel processing
+
+## Technology Stack
+
+- **Language**: Python 3.7+
+- **AI Provider**: Groq (llama-3.3-70b-versatile)
+- **Web Scraping**: BeautifulSoup4, requests, Jina AI
+- **CRM Integration**: Coda API
+- **Bot Framework**: python-telegram-bot
+- **Knowledge Base**: Local markdown files + JSON schemas
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Set up your Python environment and configure credentials.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Analyze your first URL in under 2 minutes.
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/concepts/architecture">
+    Deep dive into how the pipeline components work together.
+  </Card>
+  <Card title="CLI Usage" icon="terminal" href="/guides/cli-usage">
+    Learn batch processing and automation patterns.
+  </Card>
+</CardGroup>

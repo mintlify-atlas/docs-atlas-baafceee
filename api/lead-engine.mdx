@@ -1,0 +1,260 @@
+---
+title: 'LeadEngine'
+description: 'Core orchestration class that coordinates the entire lead intelligence pipeline'
+icon: 'engine'
+---
+
+## Overview
+
+The `LeadEngine` class is the main orchestration layer of the Lead Intelligence Engine. It coordinates the entire pipeline from URL extraction through AI evaluation to CRM integration. This class handles error recovery, duplicate detection, and provides comprehensive result metadata.
+
+## Constructor
+
+### LeadEngine()
+
+Creates a new instance of the LeadEngine with all required components initialized.
+
+```python
+from core import LeadEngine
+
+engine = LeadEngine()
+```
+
+**Initializes:**
+- `Extractor` instance for content extraction
+- `Evaluator` instance for AI-powered analysis
+- `CodaClient` instance for CRM integration
+- `RAG` instance for knowledge retrieval
+
+<Note>
+The constructor takes no parameters. All components are initialized with their default configurations.
+</Note>
+
+## Methods
+
+### process_url()
+
+Processes a complete lead intelligence workflow for a given URL.
+
+<ParamField path="url" type="string" required>
+  The website URL to analyze. Must be a valid HTTP/HTTPS URL.
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="result" type="dict">
+  The complete evaluation result with the following fields:
+  
+  <Expandable title="Result Fields">
+    <ResponseField name="url" type="string">
+      The processed URL
+    </ResponseField>
+    
+    <ResponseField name="business_name" type="string">
+      Extracted business name
+    </ResponseField>
+    
+    <ResponseField name="business_type" type="string">
+      Identified business type (e.g., "Local Service Business", "E-commerce", "SaaS")
+    </ResponseField>
+    
+    <ResponseField name="primary_service" type="string">
+      Primary service offering matched from services.json
+    </ResponseField>
+    
+    <ResponseField name="secondary_service" type="string" optional>
+      Secondary service offering if applicable
+    </ResponseField>
+    
+    <ResponseField name="fit_score" type="number">
+      Lead quality score from 0-100
+    </ResponseField>
+    
+    <ResponseField name="reasoning" type="string">
+      AI-generated explanation for the fit score
+    </ResponseField>
+    
+    <ResponseField name="outreach_angle" type="string">
+      Suggested personalized outreach approach
+    </ResponseField>
+    
+    <ResponseField name="_status" type="string">
+      Processing status: "success" or "skipped" (for duplicates)
+    </ResponseField>
+    
+    <ResponseField name="_message" type="string" optional>
+      Additional status message (e.g., "Duplicate found in CRM")
+    </ResponseField>
+    
+    <ResponseField name="_latency" type="string">
+      Total processing time in seconds (e.g., "3.45s")
+    </ResponseField>
+    
+    <ResponseField name="_usage" type="object">
+      LLM token usage statistics
+      <Expandable title="Usage Fields">
+        <ResponseField name="prompt_tokens" type="number">
+          Number of tokens in the prompt
+        </ResponseField>
+        <ResponseField name="completion_tokens" type="number">
+          Number of tokens in the completion
+        </ResponseField>
+        <ResponseField name="total_tokens" type="number">
+          Total tokens used
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Raises:**
+- `Exception` - If extraction fails (no content retrieved)
+- `Exception` - If AI evaluation fails
+- `Exception` - If Coda sync fails (database/CRM errors)
+
+<Warning>
+The method will skip processing and return immediately if a duplicate URL is found in the CRM. Check the `_status` field to detect duplicates.
+</Warning>
+
+## Usage Examples
+
+### Basic Usage
+
+```python
+from core import LeadEngine
+import json
+
+engine = LeadEngine()
+
+try:
+    result = engine.process_url("https://example.com")
+    print(json.dumps(result, indent=2))
+except Exception as e:
+    print(f"Processing failed: {e}")
+```
+
+### Batch Processing with Error Handling
+
+```python
+from core import LeadEngine
+import json
+
+engine = LeadEngine()
+urls = [
+    "https://example1.com",
+    "https://example2.com",
+    "https://example3.com"
+]
+
+results = []
+errors = []
+
+for url in urls:
+    try:
+        result = engine.process_url(url)
+        results.append(result)
+        
+        # Check status
+        if result.get("_status") == "skipped":
+            print(f"Skipped: {url} - {result.get('_message')}")
+        else:
+            print(f"Processed: {url} - Score: {result.get('fit_score')}")
+            
+    except Exception as e:
+        errors.append({"url": url, "error": str(e)})
+        print(f"Error processing {url}: {e}")
+
+print(f"\nSuccessfully processed: {len(results)}")
+print(f"Errors: {len(errors)}")
+```
+
+### Extracting Key Information
+
+```python
+from core import LeadEngine
+
+engine = LeadEngine()
+
+try:
+    result = engine.process_url("https://local-plumber.com")
+    
+    # Extract key fields
+    business = result.get("business_name")
+    score = result.get("fit_score")
+    service = result.get("primary_service")
+    angle = result.get("outreach_angle")
+    
+    print(f"Business: {business}")
+    print(f"Fit Score: {score}/100")
+    print(f"Service: {service}")
+    print(f"Suggested Approach: {angle}")
+    
+    # Check performance
+    latency = result.get("_latency")
+    tokens = result.get("_usage", {}).get("total_tokens")
+    print(f"\nProcessing Time: {latency}")
+    print(f"Tokens Used: {tokens}")
+    
+except Exception as e:
+    print(f"Error: {e}")
+```
+
+## Pipeline Flow
+
+The `process_url()` method executes the following steps in sequence:
+
+<Steps>
+  <Step title="Content Extraction">
+    Extracts text content from the URL using the Extractor component with smart fallback for SPAs and protected sites.
+  </Step>
+  
+  <Step title="Knowledge Retrieval">
+    Retrieves relevant context from the knowledge base using RAG. Continues processing even if RAG fails.
+  </Step>
+  
+  <Step title="AI Evaluation">
+    Sends extracted content and RAG context to the LLM for structured evaluation and scoring.
+  </Step>
+  
+  <Step title="Duplicate Detection">
+    Checks if the URL already exists in the CRM to prevent duplicate entries.
+  </Step>
+  
+  <Step title="CRM Integration">
+    Inserts the evaluation result into Coda if no duplicate is found.
+  </Step>
+  
+  <Step title="Result Assembly">
+    Compiles the final result with metadata including status, latency, and token usage.
+  </Step>
+</Steps>
+
+## Error Handling
+
+The LeadEngine implements comprehensive error handling at each pipeline stage:
+
+- **Extraction Errors**: Raised immediately if no content can be extracted
+- **RAG Failures**: Logged as warnings but processing continues
+- **Evaluation Errors**: Wrapped with contextual messages about AI service failures
+- **CRM Errors**: Raised with detailed Coda API error information
+
+All errors are logged using Python's logging module at the WARNING level.
+
+## Performance Considerations
+
+<Info>
+The typical processing time for a single URL ranges from 2-5 seconds, depending on:
+- URL fetch latency
+- Content size and complexity
+- LLM response time
+- Coda API response time
+</Info>
+
+Check the `_latency` field in the result for actual processing time.
+
+## Related Components
+
+- [Extractor](/api/extractor) - Content extraction with smart fallback
+- [Evaluator](/api/evaluator) - AI-powered lead evaluation
+- [RAG](/api/rag) - Knowledge retrieval system
+- [CodaClient](/api/coda-client) - CRM integration layer

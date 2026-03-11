@@ -1,0 +1,588 @@
+---
+title: 'Coda Integration'
+description: 'Connect the Lead Intelligence Engine to Coda for automated CRM synchronization'
+icon: 'table'
+---
+
+## Overview
+
+The Lead Intelligence Engine automatically saves qualified leads to a Coda table. This guide covers Coda setup, column mapping, duplicate detection, and troubleshooting.
+
+## Coda Setup
+
+### Prerequisites
+
+- A [Coda account](https://coda.io/signup) (free tier works)
+- A Coda document to serve as your CRM
+- A table within that document for lead storage
+
+### Step 1: Create Your CRM Table
+
+<Steps>
+  <Step title="Create a New Coda Document">
+    1. Go to [coda.io](https://coda.io)
+    2. Click "New doc"
+    3. Name it "Lead Intelligence CRM" (or your preferred name)
+  </Step>
+  
+  <Step title="Add a Table">
+    1. Type `/table` to insert a table
+    2. Name it "Leads" or "Business Leads"
+  </Step>
+  
+  <Step title="Configure Columns">
+    Add these columns (exact names matter):
+    
+    | Column Name | Type | Description |
+    |------------|------|-------------|
+    | Business URL | Text | Website URL (used for duplicate detection) |
+    | Business Name | Text | Extracted business name |
+    | Business Type | Text | What the business does |
+    | Primary Service | Text | Recommended primary service |
+    | Secondary Service | Text | Optional secondary service |
+    | Fit Score | Number | Score from 0-100 |
+    | Reasoning | Text | AI's reasoning for the recommendation |
+    | Outreach Angle | Text | Suggested outreach strategy |
+  </Step>
+</Steps>
+
+<Tip>
+You can add extra columns for manual notes, follow-up dates, or status tracking. The engine only writes to the 8 columns listed above.
+</Tip>
+
+### Step 2: Get Your Coda API Token
+
+<Steps>
+  <Step title="Navigate to Account Settings">
+    Go to [coda.io/account](https://coda.io/account)
+  </Step>
+  
+  <Step title="Generate API Token">
+    1. Scroll to **API Settings**
+    2. Click **Generate API token**
+    3. Give it a name like "Lead Engine"
+    4. Copy the token (you won't see it again)
+  </Step>
+  
+  <Step title="Add to .env">
+    ```env
+    CODA_API_TOKEN=your_token_here
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+API tokens grant full access to your Coda workspace. Keep them secret and never commit to version control.
+</Warning>
+
+### Step 3: Get Your Document ID
+
+<Steps>
+  <Step title="Open Your CRM Document">
+    Navigate to your Lead Intelligence CRM document in Coda
+  </Step>
+  
+  <Step title="Extract Doc ID from URL">
+    Your URL looks like:
+    ```
+    https://coda.io/d/_dABCDEFGHI/Lead-Intelligence-CRM
+    ```
+    
+    The Doc ID is the part after `/d/`: **`_dABCDEFGHI`**
+  </Step>
+  
+  <Step title="Add to .env">
+    ```env
+    CODA_DOC_ID=_dABCDEFGHI
+    ```
+  </Step>
+</Steps>
+
+### Step 4: Get Your Table ID
+
+<Tabs>
+  <Tab title="Method 1: Copy Link">
+    1. Right-click on your table
+    2. Select **"Copy table link"**
+    3. Paste the URL somewhere:
+       ```
+       https://coda.io/d/_dABCDEFGHI/Lead-Intelligence-CRM#_table_grid-abc123xyz
+       ```
+    4. The Table ID is after `#_table_`: **`grid-abc123xyz`**
+    5. Add to `.env`:
+       ```env
+       CODA_TABLE_ID=grid-abc123xyz
+       ```
+  </Tab>
+  
+  <Tab title="Method 2: API Explorer">
+    1. Go to [coda.io/developers/apis](https://coda.io/developers/apis/v1)
+    2. Navigate to **"List tables"** endpoint
+    3. Enter your `CODA_DOC_ID`
+    4. Click **"Try it"**
+    5. Find your table in the response and copy its `id` field
+    6. Add to `.env`:
+       ```env
+       CODA_TABLE_ID=grid-abc123xyz
+       ```
+  </Tab>
+</Tabs>
+
+### Verification
+
+Your `.env` should now have:
+
+```env .env
+CODA_API_TOKEN=a1b2c3d4-e5f6-7890-abcd-ef1234567890
+CODA_DOC_ID=_dABCDEFGHI
+CODA_TABLE_ID=grid-abc123xyz
+```
+
+Test the connection:
+
+```bash
+python -c "from coda_client import CodaClient; c = CodaClient(); print('Connection successful!' if c._get_columns() else 'Connection failed')"
+```
+
+## Column Mapping
+
+The engine maps evaluation results to Coda columns as follows:
+
+### Automatic Mapping
+
+```python
+# From evaluator output -> To Coda column
+{
+  "url" → "Business URL",
+  "business_name" → "Business Name",
+  "business_type" → "Business Type",
+  "primary_service" → "Primary Service",
+  "secondary_service" → "Secondary Service",
+  "fit_score" → "Fit Score",
+  "reasoning" → "Reasoning",
+  "outreach_angle" → "Outreach Angle"
+}
+```
+
+### Column Name Requirements
+
+<Warning>
+Column names are **case-sensitive** and must match exactly. "Business URL" works, "business url" does not.
+</Warning>
+
+Correct:
+```
+✓ Business URL
+✓ Business Name
+✓ Primary Service
+```
+
+Incorrect:
+```
+✗ business url
+✗ BusinessName
+✗ Primary_Service
+```
+
+### Missing Columns
+
+If a column doesn't exist in your table, the engine skips it with a warning:
+
+```bash
+Note: Skipping columns missing in Coda table: Secondary Service
+```
+
+The insert still succeeds with the available columns.
+
+### Custom Column Order
+
+Column order doesn't matter. The engine matches by name, not position:
+
+```
+# This works fine:
+[Fit Score] [Business Name] [Business URL] [Primary Service] ...
+```
+
+### Additional Columns
+
+You can add extra columns for manual tracking:
+
+- **Status** (Select): "New", "Contacted", "Converted", "Rejected"
+- **Assigned To** (Person): Sales team member
+- **Follow-up Date** (Date): When to reach out
+- **Notes** (Text): Manual observations
+- **Created** (Date): Use Coda's formula `=thisRow.CreatedDate()`
+
+The engine only writes to its 8 mapped columns and leaves others untouched.
+
+## Duplicate Detection Logic
+
+The engine prevents duplicate entries using the **Business URL** field.
+
+### How It Works
+
+<Steps>
+  <Step title="Query Coda">
+    Before inserting, the engine queries Coda:
+    
+    ```python
+    query = f'Business URL:"{url}"'
+    ```
+  </Step>
+  
+  <Step title="Check for Matches">
+    If any row has a matching `Business URL`, the engine skips insertion:
+    
+    ```bash
+    SKIPPED CRM INSERTION: https://example.com
+    Reason: Duplicate found in CRM
+    ```
+  </Step>
+  
+  <Step title="Insert if Unique">
+    If no match found, the engine inserts a new row.
+  </Step>
+</Steps>
+
+### Key Behaviors
+
+<AccordionGroup>
+  <Accordion title="URL Normalization">
+    The engine performs **exact string matching** without normalization. These are treated as different:
+    
+    - `https://example.com`
+    - `https://www.example.com`
+    - `http://example.com`
+    - `https://example.com/`
+    
+    <Tip>
+    Manually clean URLs before analysis if you want strict deduplication (e.g., always include `www.`).
+    </Tip>
+  </Accordion>
+  
+  <Accordion title="Case Sensitivity">
+    URLs are case-sensitive:
+    
+    - `https://Example.com` ≠ `https://example.com`
+    
+    Most URLs are lowercase, but edge cases exist.
+  </Accordion>
+  
+  <Accordion title="Query Limitations">
+    If the Coda API query fails (network error, auth issue), the engine:
+    
+    1. Logs a warning: `Duplicate check failed (Coda API): <error>`
+    2. **Assumes no duplicate exists** (fail-safe to prevent data loss)
+    3. Proceeds with insertion
+    
+    This means occasional duplicates may slip through if Coda is unreachable.
+  </Accordion>
+  
+  <Accordion title="Multiple Tables">
+    Duplicate detection only checks the configured `CODA_TABLE_ID`. If you use multiple tables, each operates independently.
+  </Accordion>
+</AccordionGroup>
+
+### Preventing False Duplicates
+
+If you're getting "duplicate" warnings for new URLs:
+
+1. Check for trailing slashes: `https://example.com/` vs `https://example.com`
+2. Verify protocol consistency: `http://` vs `https://`
+3. Check for URL redirects (e.g., `example.com` → `www.example.com`)
+
+### Forcing Re-analysis
+
+To re-analyze a URL already in Coda:
+
+1. **Delete the row** in Coda
+2. Run the analysis again
+
+Or:
+
+1. Temporarily change the URL in Coda to something else
+2. Run the analysis (will insert new row)
+3. Delete the old row
+
+<Warning>
+There is no "force" flag to bypass duplicate detection. This is intentional to prevent accidental CRM pollution.
+</Warning>
+
+## Data Type Handling
+
+The engine sanitizes data before sending to Coda:
+
+### Null Values
+
+```python
+# If evaluation returns null for secondary_service:
+{"secondary_service": null}
+
+# Converted to empty string before Coda insertion:
+{"secondary_service": ""}
+```
+
+Coda API rejects `null` values, so the engine converts them to empty strings.
+
+### Special Characters
+
+No escaping needed. The engine handles:
+
+- Quotes: `Business name: "Joe's Plumbing"`
+- Newlines: Multi-line reasoning text
+- Emojis: `🚀 Awesome Business`
+- Unicode: `Café François`
+
+### Number Fields
+
+The `Fit Score` column should be type **Number** in Coda:
+
+```python
+{"fit_score": 85}  # Inserted as number, not string "85"
+```
+
+If you accidentally set it as **Text**, Coda will still accept it but won't allow numeric sorting/filtering.
+
+## Error Handling
+
+### Common Coda Errors
+
+#### "Coda configuration is incomplete in .env"
+
+**Cause**: Missing one or more Coda variables
+
+**Fix**: Verify all three variables exist in `.env`:
+```env
+CODA_API_TOKEN=...
+CODA_DOC_ID=...
+CODA_TABLE_ID=...
+```
+
+#### "401 Unauthorized"
+
+**Cause**: Invalid or expired API token
+
+**Fix**:
+1. Go to [coda.io/account](https://coda.io/account)
+2. Regenerate API token
+3. Update `.env` with new token
+
+#### "404 Not Found"
+
+**Cause**: Incorrect Doc ID or Table ID
+
+**Fix**:
+1. Verify Doc ID by checking document URL
+2. Verify Table ID using "Copy table link" method
+3. Ensure no extra spaces in `.env`
+
+#### "403 Forbidden"
+
+**Cause**: API token lacks write permissions
+
+**Fix**:
+1. Regenerate token with full permissions
+2. Ensure you own the document (not just a viewer/commenter)
+
+#### "Column 'X' not found"
+
+**Cause**: Column name mismatch (case-sensitive)
+
+**Fix**:
+1. Check exact column names in Coda
+2. Rename to match required names:
+   - `Business URL` (not `Business url` or `URL`)
+   - `Business Name` (not `Name` or `Company`)
+   - etc.
+
+### Network Issues
+
+#### Timeout Errors
+
+```bash
+Coda API Error: ReadTimeout | Details: Request timed out after 15s
+```
+
+**Fix**:
+1. Check internet connection
+2. Verify Coda status at [status.coda.io](https://status.coda.io)
+3. Increase timeout in `coda_client.py:111`:
+   ```python
+   response = requests.post(url, headers=self._get_headers(), json=row_payload, timeout=30)  # Increased from 15
+   ```
+
+#### Rate Limiting
+
+```bash
+Coda API Error: 429 Too Many Requests
+```
+
+Coda's API has rate limits:
+- **Free tier**: ~10 requests/second
+- **Team/Enterprise**: Higher limits
+
+**Fix**:
+1. Add delays between batch operations
+2. Reduce parallel analysis (if running multiple bots)
+3. Upgrade Coda plan for higher limits
+
+## Troubleshooting
+
+### Testing Coda Connection
+
+Run the built-in test:
+
+```python
+python coda_client.py
+```
+
+Expected output:
+```bash
+Coda client loaded. Set .env variables to test.
+```
+
+For a full insertion test, uncomment lines 135-139 in `coda_client.py`:
+
+```python coda_client.py
+if __name__ == "__main__":
+    client = CodaClient()
+    mock_data = {
+        "url": "https://test.com",
+        "business_name": "Test Business Name",
+        "business_type": "Test Business Type",
+        "primary_service": "Foundation Package",
+        "secondary_service": None,
+        "fit_score": 90,
+        "reasoning": "Test reasoning",
+        "outreach_angle": "Test hook"
+    }
+    try:
+        res = client.insert_row(mock_data)
+        print("Insert successful:", res)
+    except Exception as e:
+        print("Error:", e)
+```
+
+Run:
+```bash
+python coda_client.py
+```
+
+Should insert a test row into your table.
+
+### Viewing API Logs
+
+Enable detailed logging:
+
+```python
+import logging
+logging.basicConfig(level=logging.DEBUG)
+```
+
+Add to top of `coda_client.py` temporarily for verbose output.
+
+### Inspecting API Responses
+
+Modify `coda_client.py:111` to print raw responses:
+
+```python
+response = requests.post(url, headers=self._get_headers(), json=row_payload, timeout=15)
+print("Response:", response.status_code, response.text)  # Add this line
+response.raise_for_status()
+```
+
+### Common Column Mapping Issues
+
+<AccordionGroup>
+  <Accordion title="Column names with extra spaces">
+    ```
+    # Wrong in Coda:
+    "Business Name "  (trailing space)
+    " Business Name"  (leading space)
+    
+    # Correct:
+    "Business Name"
+    ```
+    
+    **Fix**: Remove extra spaces in Coda column headers
+  </Accordion>
+  
+  <Accordion title="Column type mismatch">
+    If `Fit Score` is set as **Text** instead of **Number**, you'll get:
+    
+    ```bash
+    Coda API Error: Invalid value for column 'Fit Score'
+    ```
+    
+    **Fix**: Change column type to **Number** in Coda
+  </Accordion>
+  
+  <Accordion title="Required columns in Coda">
+    If you set Coda columns as "Required" but the engine sends empty values:
+    
+    ```bash
+    Coda API Error: Required column 'Secondary Service' cannot be empty
+    ```
+    
+    **Fix**: Make the column optional in Coda, or ensure the AI always provides a value
+  </Accordion>
+</AccordionGroup>
+
+## Advanced Configuration
+
+### Custom Column Mapping
+
+If you want different column names, edit `coda_client.py:78-87`:
+
+```python coda_client.py
+desired_cells = [
+    {"column": "URL", "value": evaluation_data.get("url")},  # Changed from "Business URL"
+    {"column": "Company Name", "value": evaluation_data.get("business_name")},  # Changed
+    # ... customize others ...
+]
+```
+
+<Warning>
+This requires code changes. Prefer using the standard column names to avoid maintenance overhead.
+</Warning>
+
+### Multiple CRM Tables
+
+To write to different tables based on conditions:
+
+```python
+# In core.py, customize insert_row call:
+if result.get("fit_score") >= 80:
+    self.coda.table_id = os.getenv("CODA_TABLE_ID_HIGH_PRIORITY")
+else:
+    self.coda.table_id = os.getenv("CODA_TABLE_ID_STANDARD")
+
+self.coda.insert_row(result)
+```
+
+Requires setting up multiple table IDs in `.env`.
+
+### Webhook Notifications
+
+Use Coda automations to trigger webhooks when new rows are added:
+
+1. In Coda, click **Automations** (top right)
+2. Create rule: "When rows are added to Leads"
+3. Action: "Send webhook" → Zapier, Make.com, or custom endpoint
+
+This enables:
+- Slack notifications for new leads
+- Auto-adding to other CRMs (HubSpot, Salesforce)
+- Triggering email campaigns
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="CLI Usage" icon="terminal" href="/guides/cli-usage">
+    Start analyzing leads via command line
+  </Card>
+  
+  <Card title="Telegram Bot" icon="telegram" href="/guides/telegram-bot">
+    Use the bot interface for easier lead generation
+  </Card>
+</CardGroup>

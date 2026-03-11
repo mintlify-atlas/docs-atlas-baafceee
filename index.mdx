@@ -1,97 +1,102 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Lead Intelligence Engine"
+description: "AI-powered lead qualification engine that extracts business data from URLs, enriches with RAG context, and categorizes into service offerings with automated CRM sync."
 ---
 
-## Setting up
+# Lead Intelligence Engine
 
-Get your documentation site up and running in minutes.
+AI-powered lead qualification that extracts business intelligence from URLs, enriches with RAG context, and automatically qualifies leads for your CRM.
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+## Features
 
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="AI-Powered Evaluation" icon="brain" href="/concepts/evaluation-pipeline">
+    Uses Groq LLM with custom prompts to analyze business websites and categorize them into service offerings.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="RAG-Enhanced Context" icon="books" href="/concepts/rag-system">
+    Enriches evaluation with domain knowledge from your knowledge base for more accurate lead qualification.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Telegram Bot Interface" icon="telegram" href="/guides/telegram-bot">
+    Analyze URLs on the go with a fully featured Telegram bot with rate limiting and token tracking.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Duplicate Prevention" icon="shield-check" href="/concepts/duplicate-detection">
+    Automatically checks Coda CRM to prevent duplicate entries for the same business URL.
   </Card>
-</Columns>
+  <Card title="Smart Extraction" icon="globe" href="/api/extractor">
+    Multi-strategy web content extraction with BeautifulSoup and Jina fallback for SPAs.
+  </Card>
+  <Card title="CRM Integration" icon="database" href="/guides/coda-integration">
+    Seamless integration with Coda for automatic lead storage and management.
+  </Card>
+</CardGroup>
 
-## Create beautiful pages
+## Quick Start
 
-Everything you need to create world-class documentation.
+Get up and running with the Lead Intelligence Engine in minutes.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Set up the engine with Python dependencies and environment configuration.
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Analyze your first business URL in under 2 minutes.
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+</CardGroup>
 
-## Need inspiration?
+## Core Capabilities
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
+<Steps>
+  <Step title="Extract Business Data">
+    The engine fetches website content using smart extraction with fallback strategies for modern SPAs and protected sites.
+  </Step>
+  <Step title="Enrich with RAG Context">
+    Retrieved context from your knowledge base adds domain expertise to the AI evaluation process.
+  </Step>
+  <Step title="AI Evaluation">
+    Groq LLM analyzes the business and matches it to your service catalog with fit scoring and reasoning.
+  </Step>
+  <Step title="Sync to CRM">
+    Valid leads are automatically inserted into Coda CRM with duplicate prevention.
+  </Step>
+</Steps>
+
+## Use Cases
+
+<AccordionGroup>
+  <Accordion title="Sales Lead Generation">
+    Automatically qualify inbound leads from web forms, LinkedIn, or prospect lists by analyzing their business website.
+  </Accordion>
+  <Accordion title="Market Research">
+    Build intelligence profiles on competitors or market segments by systematically analyzing business URLs.
+  </Accordion>
+  <Accordion title="Service Matching">
+    Identify which of your service packages best fits a prospect's current digital maturity and business type.
+  </Accordion>
+  <Accordion title="Outreach Preparation">
+    Generate contextual outreach angles based on structural gaps detected in a prospect's online presence.
+  </Accordion>
+</AccordionGroup>
+
+## Architecture Overview
+
+The Lead Intelligence Engine is a **stateless, AI-ML pipeline** designed for internal agency use:
+
+- **Python-based**: Built with requests, BeautifulSoup, Groq SDK, and python-telegram-bot
+- **Modular components**: Core engine orchestrates extraction, RAG, evaluation, and CRM sync
+- **Sub-20s latency**: Optimized for fast analysis with timeout controls and smart caching
+- **Dual interfaces**: CLI for batch processing, Telegram bot for interactive use
+
+<CardGroup cols={2}>
+  <Card title="System Architecture" icon="diagram-project" href="/concepts/architecture">
+    Understand how components work together in the evaluation pipeline.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/lead-engine">
+    Explore the public API surface for programmatic integration.
+  </Card>
+</CardGroup>
+
+## Get Help
+
+<Card title="GitHub Repository" icon="github" href="https://github.com/Fezi-x/Lead-Intelligence-Engine">
+  View source code, report issues, and contribute to the project.
 </Card>

@@ -1,0 +1,429 @@
+---
+title: 'RAG'
+description: 'Knowledge retrieval system for enhancing lead evaluations with domain-specific context'
+icon: 'book-open'
+---
+
+## Overview
+
+The `RAG` (Retrieval-Augmented Generation) class provides a lightweight knowledge retrieval system that enhances lead evaluations with relevant domain-specific context. It loads markdown files from a knowledge directory and uses keyword-based ranking to retrieve the most relevant documents for a given query.
+
+## Constructor
+
+### RAG()
+
+<ParamField path="knowledge_dir" type="string" default="knowledge">
+  Directory path containing markdown files (.md) to load into the knowledge corpus. Relative paths are resolved from the current working directory.
+</ParamField>
+
+```python
+from rag import RAG
+
+# Use default knowledge directory
+rag = RAG()
+
+# Custom knowledge directory
+rag = RAG(knowledge_dir="docs/context")
+
+# Absolute path
+rag = RAG(knowledge_dir="/path/to/knowledge")
+```
+
+**Automatic Initialization:**
+The constructor automatically loads all `.md` files from the knowledge directory into memory. No separate loading step is required.
+
+<Note>
+The knowledge corpus is loaded once at initialization and stored in memory for fast retrieval.
+</Note>
+
+## Properties
+
+<ResponseField name="knowledge_dir" type="string">
+  Path to the knowledge directory
+</ResponseField>
+
+<ResponseField name="corpus" type="list">
+  List of loaded knowledge documents. Each document is a dict with:
+  <Expandable title="Document Structure">
+    <ResponseField name="source" type="string">
+      Filename of the markdown file (e.g., "sales-best-practices.md")
+    </ResponseField>
+    <ResponseField name="content" type="string">
+      Full text content of the markdown file
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Methods
+
+### retrieve()
+
+Retrieves the most relevant knowledge documents for a given query.
+
+<ParamField path="query_text" type="string" required>
+  The query text to search for. Typically website content or a specific question.
+</ParamField>
+
+<ParamField path="limit" type="number" default="3">
+  Maximum number of documents to return. Returns fewer if insufficient relevant documents are found.
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="results" type="list">
+  List of relevant document contents (strings) ranked by relevance score. Returns an empty list if no relevant documents are found.
+</ResponseField>
+
+```python
+from rag import RAG
+
+rag = RAG()
+
+# Retrieve relevant context
+query = "We need help automating our sales process and lead qualification."
+results = rag.retrieve(query, limit=3)
+
+print(f"Found {len(results)} relevant documents")
+for i, content in enumerate(results, 1):
+    print(f"\n--- Document {i} ---")
+    print(content[:200] + "...")
+```
+
+<Info>
+The method returns only the document contents (strings), not the full document objects. This format is optimized for direct injection into LLM prompts.
+</Info>
+
+## Usage Examples
+
+### Basic Retrieval
+
+```python
+from rag import RAG
+
+rag = RAG()
+
+# Query with business context
+query = "Digital marketing agency specializing in social media"
+results = rag.retrieve(query)
+
+if results:
+    print(f"Retrieved {len(results)} relevant documents")
+    for doc in results:
+        print(f"\nDocument length: {len(doc)} chars")
+        print(f"Preview: {doc[:150]}...")
+else:
+    print("No relevant context found")
+```
+
+### Integration with Evaluator
+
+```python
+from rag import RAG
+from evaluator import Evaluator
+
+rag = RAG()
+evaluator = Evaluator()
+
+content = """
+We are a medical clinic in Yangon offering general practice, 
+diagnostics, and preventive care services.
+"""
+
+# Retrieve relevant knowledge
+context = rag.retrieve(content, limit=3)
+
+# Enhance evaluation with context
+result = evaluator.evaluate(content, rag_context=context)
+
+print(f"Evaluation with {len(context)} context documents")
+print(f"Fit Score: {result['fit_score']}")
+print(f"Reasoning: {result['reasoning']}")
+```
+
+### Custom Knowledge Directory
+
+```python
+from rag import RAG
+import os
+
+# Set up custom knowledge base
+knowledge_path = "sales_playbooks"
+rag = RAG(knowledge_dir=knowledge_path)
+
+print(f"Loaded {len(rag.corpus)} documents from {knowledge_path}")
+for doc in rag.corpus:
+    print(f"  - {doc['source']}: {len(doc['content'])} chars")
+
+# Retrieve from custom corpus
+results = rag.retrieve("B2B software sales", limit=5)
+print(f"\nRetrieved {len(results)} relevant documents")
+```
+
+### Checking Corpus Contents
+
+```python
+from rag import RAG
+
+rag = RAG()
+
+print("Knowledge Corpus:")
+print(f"Total documents: {len(rag.corpus)}\n")
+
+for doc in rag.corpus:
+    print(f"Source: {doc['source']}")
+    print(f"Length: {len(doc['content'])} characters")
+    print(f"Preview: {doc['content'][:100]}...")
+    print("-" * 40)
+```
+
+### Adjusting Retrieval Limit
+
+```python
+from rag import RAG
+
+rag = RAG()
+query = "Healthcare services in Southeast Asia"
+
+# Get different amounts of context
+for limit in [1, 3, 5]:
+    results = rag.retrieve(query, limit=limit)
+    total_chars = sum(len(r) for r in results)
+    print(f"Limit {limit}: {len(results)} docs, {total_chars} total chars")
+```
+
+### Handling Empty Results
+
+```python
+from rag import RAG
+
+rag = RAG()
+
+# Query that may not match anything
+query = "Quantum computing blockchain AI"
+results = rag.retrieve(query)
+
+if not results:
+    print("No relevant context found. Proceeding without RAG enhancement.")
+    # Continue with evaluation without context
+else:
+    print(f"Found {len(results)} relevant documents")
+    # Use the context
+```
+
+## Ranking Algorithm
+
+The RAG class uses a keyword-based scoring system:
+
+<Steps>
+  <Step title="Text Normalization">
+    Converts query and documents to lowercase and splits into word sets
+  </Step>
+  
+  <Step title="Intersection Scoring">
+    Base score = number of common words between query and document
+  </Step>
+  
+  <Step title="Long Word Boost">
+    Adds 0.5 points for each long word (>4 chars) that appears in the document
+  </Step>
+  
+  <Step title="High-Value Word Fallback">
+    If no matches found, searches for domain-specific keywords ("yangon", "bangkok", "medical", "education", "marketing", "digital")
+  </Step>
+  
+  <Step title="Deduplication">
+    Removes duplicate documents from results
+  </Step>
+  
+  <Step title="Ranking">
+    Sorts documents by score (descending) and returns top N
+  </Step>
+</Steps>
+
+<Info>
+This simple keyword approach is fast and requires no external dependencies or ML models, making it ideal for small to medium knowledge bases.
+</Info>
+
+## Scoring Examples
+
+How different queries score:
+
+```python
+# Query: "marketing automation sales"
+# Document: "Marketing automation helps sales teams..."
+# Score: 3 (base) + 1.5 (marketing, automation, sales > 4 chars) = 4.5
+
+# Query: "food restaurant dining"
+# Document: "Best practices for restaurant operations..."
+# Score: 1 (restaurant) + 0.5 (restaurant boost) = 1.5
+
+# Query: "medical clinic yangon"
+# Document: "Healthcare services in Yangon..."
+# Score: 2 (medical, yangon) + 1.0 (both > 4 chars) = 3.0
+```
+
+## Knowledge Base Setup
+
+Organize your knowledge directory with focused markdown files:
+
+```
+knowledge/
+├── sales-automation.md       # Sales process and automation best practices
+├── lead-qualification.md     # Lead scoring and qualification guidelines
+├── industry-healthcare.md    # Healthcare industry insights
+├── industry-education.md     # Education industry insights
+├── geography-myanmar.md      # Myanmar market context
+└── geography-thailand.md     # Thailand market context
+```
+
+**Example markdown file (sales-automation.md):**
+
+```markdown
+# Sales Automation Best Practices
+
+Businesses that struggle with manual sales processes benefit greatly from automation.
+Key indicators: manual data entry, inconsistent follow-up, lack of lead tracking.
+
+Recommended approach: Start with CRM integration and automated lead scoring.
+```
+
+<Note>
+Keep knowledge files focused on specific topics for better retrieval accuracy. Split large documents into smaller, topic-specific files.
+</Note>
+
+## Performance Characteristics
+
+- **Initialization**: O(n) where n = number of markdown files (one-time cost)
+- **Retrieval**: O(m × k) where m = corpus size, k = average document length
+- **Memory Usage**: All documents loaded into memory (~1-5 MB typical)
+- **Latency**: &lt;10ms for typical queries with corpus size &lt;100 documents
+
+<Warning>
+For very large knowledge bases (>1000 documents), consider implementing a more sophisticated retrieval system with vector embeddings or full-text search.
+</Warning>
+
+## Empty Corpus Handling
+
+If the knowledge directory is empty or doesn't exist:
+
+```python
+rag = RAG(knowledge_dir="nonexistent")
+print(len(rag.corpus))  # 0
+
+results = rag.retrieve("any query")
+print(results)  # []
+```
+
+The system gracefully handles empty corpora and returns empty lists.
+
+## File Loading
+
+The RAG class uses Python's `glob` module to find markdown files:
+
+```python
+import glob
+import os
+
+files = glob.glob(os.path.join(knowledge_dir, "*.md"))
+```
+
+- Loads **only** `.md` files (case-sensitive)
+- Non-markdown files are ignored
+- Subdirectories are **not** searched (flat directory structure only)
+- Files are loaded with UTF-8 encoding
+
+<Info>
+If you need recursive directory search, modify the `_load_corpus()` method to use `"**/*.md"` with `recursive=True`.
+</Info>
+
+## Retrieval Best Practices
+
+<Tabs>
+  <Tab title="Query Length">
+    **Optimal Query Length**: 50-200 words
+    
+    - Too short (< 20 words): May not provide enough keywords for matching
+    - Too long (> 500 words): Processing time increases without significant benefit
+    - Sweet spot: A paragraph summarizing the business or question
+  </Tab>
+  
+  <Tab title="Document Size">
+    **Recommended Document Size**: 200-1000 words each
+    
+    - Keep knowledge files focused on single topics
+    - Break large documents into sections
+    - Use descriptive filenames for better debugging
+  </Tab>
+  
+  <Tab title="Limit Setting">
+    **Choosing the Right Limit**:
+    
+    - `limit=1`: Quick single-context injection
+    - `limit=3`: Balanced (default, recommended)
+    - `limit=5+`: Comprehensive but increases token usage
+    
+    Consider LLM context window limits when setting high limits.
+  </Tab>
+</Tabs>
+
+## Integration Patterns
+
+### Optional Enhancement Pattern
+
+```python
+from rag import RAG
+from evaluator import Evaluator
+
+evaluator = Evaluator()
+rag = RAG()
+
+# Try to get context, but don't fail if RAG fails
+try:
+    context = rag.retrieve(content)
+except Exception as e:
+    print(f"RAG failed: {e}. Continuing without context.")
+    context = None
+
+# Evaluate with or without context
+result = evaluator.evaluate(content, rag_context=context)
+```
+
+### Conditional RAG Pattern
+
+```python
+from rag import RAG
+
+rag = RAG()
+
+# Only use RAG for specific business types
+if business_type in ["healthcare", "education", "legal"]:
+    context = rag.retrieve(content, limit=5)
+else:
+    context = None
+
+result = evaluator.evaluate(content, rag_context=context)
+```
+
+## Command-Line Testing
+
+Test the RAG system standalone:
+
+```bash
+python rag.py
+```
+
+Output:
+```
+Retrieved 3 items:
+--- Result 1 ---
+Sales automation helps businesses streamline their lead qualification process...
+--- Result 2 ---
+Healthcare providers in Southeast Asia often need...
+--- Result 3 ---
+Education institutions benefit from digital marketing...
+```
+
+## Related Components
+
+- [LeadEngine](/api/lead-engine) - Integrates RAG into the full pipeline
+- [Evaluator](/api/evaluator) - Consumes RAG context for enhanced evaluations

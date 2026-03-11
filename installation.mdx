@@ -1,0 +1,321 @@
+---
+title: "Installation"
+description: "Set up the Lead Intelligence Engine in your Python environment"
+---
+
+## System Requirements
+
+<CardGroup cols={2}>
+  <Card title="Python" icon="python">
+    Python 3.7 or higher
+  </Card>
+  <Card title="Operating System" icon="laptop">
+    Linux, macOS, or Windows
+  </Card>
+  <Card title="Memory" icon="memory">
+    Minimum 512MB RAM
+  </Card>
+  <Card title="Network" icon="wifi">
+    Internet connection for API calls
+  </Card>
+</CardGroup>
+
+## Step 1: Clone the Repository
+
+Clone the Lead Intelligence Engine from GitHub:
+
+<CodeGroup>
+
+```bash HTTPS
+git clone https://github.com/Fezi-x/Lead-Intelligence-Engine.git
+cd Lead-Intelligence-Engine
+```
+
+```bash SSH
+git clone git@github.com:Fezi-x/Lead-Intelligence-Engine.git
+cd Lead-Intelligence-Engine
+```
+
+</CodeGroup>
+
+## Step 2: Create Virtual Environment
+
+<Warning>
+Always use a virtual environment to avoid dependency conflicts with your system Python packages.
+</Warning>
+
+<Tabs>
+  <Tab title="Linux/macOS">
+    ```bash
+    # Create virtual environment
+    python3 -m venv venv
+
+    # Activate virtual environment
+    source venv/bin/activate
+
+    # Verify activation (should show venv path)
+    which python
+    ```
+  </Tab>
+  <Tab title="Windows PowerShell">
+    ```powershell
+    # Create virtual environment
+    python -m venv venv
+
+    # Activate virtual environment
+    .\venv\Scripts\activate
+
+    # Verify activation (should show venv path)
+    (Get-Command python).Path
+    ```
+  </Tab>
+  <Tab title="Windows CMD">
+    ```cmd
+    # Create virtual environment
+    python -m venv venv
+
+    # Activate virtual environment
+    venv\Scripts\activate.bat
+
+    # Verify activation
+    where python
+    ```
+  </Tab>
+</Tabs>
+
+## Step 3: Install Dependencies
+
+Install all required Python packages:
+
+```bash
+pip install requests beautifulsoup4 python-dotenv groq python-telegram-bot
+```
+
+<Accordion title="What each dependency does">
+  - **requests**: HTTP library for fetching web pages
+  - **beautifulsoup4**: HTML parsing and text extraction
+  - **python-dotenv**: Environment variable management from .env files
+  - **groq**: Official Groq SDK for LLM API access
+  - **python-telegram-bot**: Telegram Bot API wrapper (optional if not using bot)
+</Accordion>
+
+### Verify Installation
+
+Confirm all packages are installed:
+
+```bash
+pip list | grep -E "requests|beautifulsoup4|dotenv|groq|telegram"
+```
+
+Expected output:
+```
+beautifulsoup4           4.12.x
+python-dotenv            1.0.x
+python-telegram-bot      20.x
+groq                     0.x.x
+requests                 2.31.x
+```
+
+## Step 4: Configure Environment Variables
+
+Create a `.env` file in the project root directory:
+
+```env .env
+# Required: Groq AI API Key
+GROQ_API_KEY=gsk_your_groq_api_key_here
+
+# Required: Coda CRM Integration
+CODA_API_TOKEN=your_coda_api_token
+CODA_DOC_ID=your_coda_document_id
+CODA_TABLE_ID=grid-your_table_id
+
+# Optional: Telegram Bot (only if using bot interface)
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+```
+
+### Getting API Credentials
+
+<Steps>
+  <Step title="Groq API Key">
+    1. Visit [console.groq.com](https://console.groq.com)
+    2. Sign up or log in
+    3. Navigate to **API Keys** section
+    4. Click **Create API Key**
+    5. Copy the key (starts with `gsk_`)
+    
+    <Note>Free tier includes 7,000 RPD (requests per day) with llama-3.3-70b</Note>
+  </Step>
+  <Step title="Coda Credentials">
+    1. Go to [coda.io/account](https://coda.io/account)
+    2. Scroll to **API Settings**
+    3. Click **Generate API Token**
+    4. Copy the token
+    5. Get your Doc ID and Table ID from the Coda URL
+    
+    <Card title="Coda Integration Guide" icon="database" href="/guides/coda-integration">
+      Detailed setup instructions for Coda CRM integration
+    </Card>
+  </Step>
+  <Step title="Telegram Bot Token (Optional)">
+    1. Open Telegram and search for `@BotFather`
+    2. Send `/newbot` command
+    3. Follow prompts to name your bot
+    4. Copy the bot token provided
+    
+    <Info>Only needed if you want to use the Telegram bot interface</Info>
+  </Step>
+</Steps>
+
+## Step 5: Verify Installation
+
+Run a test to ensure everything is configured correctly:
+
+```bash
+python -c "from core import LeadEngine; print('✓ Installation successful')"
+```
+
+If you see `✓ Installation successful`, you're ready to go!
+
+### Test with a Real URL
+
+Try analyzing a test URL:
+
+```bash
+python main.py https://example.com
+```
+
+You should see output with business analysis, fit score, and either success or duplicate detection message.
+
+## Project Structure
+
+After installation, your directory should look like this:
+
+```
+Lead-Intelligence-Engine/
+├── .env                    # Your credentials (not in git)
+├── .gitignore
+├── README.md
+├── core.py                 # Main orchestration engine
+├── main.py                 # CLI entry point
+├── telegram_bot.py         # Telegram bot interface
+├── extractor.py            # Web scraping logic
+├── rag.py                  # Knowledge retrieval
+├── evaluator.py            # AI evaluation with Groq
+├── coda_client.py          # CRM integration
+├── facebook_client.py      # Facebook page extraction
+├── knowledge/              # RAG corpus
+│   ├── Lead_q_criteria.md
+│   └── strategy_efficiency.md
+├── prompts/
+│   └── system_prompt.md    # LLM instructions
+├── services/
+│   └── services.json       # Service catalog
+└── venv/                   # Virtual environment (not in git)
+```
+
+## Optional: Telegram Bot Setup
+
+If you want to use the Telegram bot interface:
+
+<Steps>
+  <Step title="Add Bot Token to .env">
+    ```env
+    TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+    ```
+  </Step>
+  <Step title="Start the Bot">
+    ```bash
+    python telegram_bot.py
+    ```
+    You should see:
+    ```
+    Lead Intelligence Engine -- Application running...
+    ```
+  </Step>
+  <Step title="Test in Telegram">
+    1. Open Telegram
+    2. Search for your bot by username
+    3. Send `/start`
+    4. Try analyzing a URL
+  </Step>
+</Steps>
+
+<Card title="Telegram Bot Guide" icon="telegram" href="/guides/telegram-bot">
+  Full guide on bot commands, rate limiting, and production deployment
+</Card>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="pip install fails with SSL error">
+    Upgrade pip first:
+    ```bash
+    python -m pip install --upgrade pip
+    ```
+    Then retry the dependency installation.
+  </Accordion>
+  
+  <Accordion title="Virtual environment not activating on Windows">
+    If PowerShell blocks script execution:
+    ```powershell
+    Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+    ```
+    Then retry activation.
+  </Accordion>
+  
+  <Accordion title="Module not found errors">
+    Make sure:
+    1. Virtual environment is activated (you should see `(venv)` in prompt)
+    2. You installed dependencies in the correct venv
+    3. You're running Python from the venv path
+    
+    Re-activate and verify:
+    ```bash
+    source venv/bin/activate
+    which python
+    pip list
+    ```
+  </Accordion>
+  
+  <Accordion title="Cannot find .env file">
+    The `.env` file must be in the same directory as `main.py`. Check:
+    ```bash
+    ls -la | grep .env
+    ```
+    If missing, create it:
+    ```bash
+    touch .env
+    nano .env  # or use any text editor
+    ```
+  </Accordion>
+  
+  <Accordion title="Groq API Key not working">
+    Common issues:
+    - Key copied with extra spaces (trim whitespace)
+    - Using wrong key format (must start with `gsk_`)
+    - API key quota exceeded (check console.groq.com)
+    - Missing `.env` file or wrong location
+    
+    Test your key:
+    ```bash
+    python -c "import os; from dotenv import load_dotenv; load_dotenv(); print(os.getenv('GROQ_API_KEY'))"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Analyze your first business URL in 2 minutes
+  </Card>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Customize services, prompts, and knowledge base
+  </Card>
+  <Card title="CLI Usage" icon="terminal" href="/guides/cli-usage">
+    Learn batch processing and automation
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/concepts/architecture">
+    Understand how the system works
+  </Card>
+</CardGroup>

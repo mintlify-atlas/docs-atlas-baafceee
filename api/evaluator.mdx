@@ -1,0 +1,375 @@
+---
+title: 'Evaluator'
+description: 'AI-powered lead evaluation engine using Groq LLM for intelligent scoring and analysis'
+icon: 'stars'
+---
+
+## Overview
+
+The `Evaluator` class handles AI-powered lead evaluation using Groq's LLM API. It analyzes extracted content, matches services against a predefined catalog, generates fit scores, and provides personalized outreach recommendations. The class includes automatic validation, retry logic, and quota tracking.
+
+## Constructor
+
+### Evaluator()
+
+<ParamField path="model" type="string" default="llama-3.3-70b-versatile">
+  The Groq model to use for evaluation. Supported models:
+  - `llama-3.3-70b-versatile` (default, recommended)
+  - `llama-3.1-70b-versatile`
+  - `mixtral-8x7b-32768`
+</ParamField>
+
+```python
+from evaluator import Evaluator
+
+# Use default model
+evaluator = Evaluator()
+
+# Use specific model
+evaluator = Evaluator(model="mixtral-8x7b-32768")
+```
+
+**Environment Variables Required:**
+- `GROQ_API_KEY` - Your Groq API key (required)
+
+**Configuration Files Required:**
+- `services/services.json` - Service catalog for validation
+- `prompts/system_prompt.md` - System prompt template
+
+**Raises:**
+- `ValueError` - If `GROQ_API_KEY` is not found in environment variables
+
+<Warning>
+The Evaluator requires a valid Groq API key. Sign up at [console.groq.com](https://console.groq.com) to get your API key.
+</Warning>
+
+## Class Properties
+
+The Evaluator maintains class-level tracking across all instances:
+
+<ResponseField name="status" type="string" default="System Online">
+  Current system status. Updates to "Rate Limited / Quota Reached" on API errors.
+</ResponseField>
+
+<ResponseField name="quota_ok" type="boolean" default="true">
+  Whether the API quota is available. Set to `false` on rate limit errors.
+</ResponseField>
+
+<ResponseField name="last_run_time" type="string" optional>
+  Timestamp of the last evaluation run in format "YYYY-MM-DD HH:MM:SS"
+</ResponseField>
+
+<ResponseField name="total_usage" type="object">
+  Cumulative token usage across all evaluations:
+  <Expandable title="Usage Fields">
+    <ResponseField name="prompt_tokens" type="number" default="0">
+      Total prompt tokens used
+    </ResponseField>
+    <ResponseField name="completion_tokens" type="number" default="0">
+      Total completion tokens used
+    </ResponseField>
+    <ResponseField name="total_tokens" type="number" default="0">
+      Total tokens used
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Methods
+
+### evaluate()
+
+Analyzes content and returns a structured evaluation with service matching and scoring.
+
+<ParamField path="content" type="string" required>
+  The website content to analyze. Typically extracted text from a webpage.
+</ParamField>
+
+<ParamField path="rag_context" type="list | string" optional>
+  Additional context from the knowledge base to inform the evaluation. Can be a list of strings or a single string.
+</ParamField>
+
+<ParamField path="retry_count" type="number" default="1">
+  Number of retry attempts on failure. Total attempts will be `retry_count + 1`.
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="result" type="dict">
+  Structured evaluation result with the following fields:
+  
+  <Expandable title="Evaluation Fields">
+    <ResponseField name="business_name" type="string">
+      Extracted business name
+    </ResponseField>
+    
+    <ResponseField name="business_type" type="string">
+      Business category (e.g., "Local Service Business", "E-commerce", "SaaS", "Healthcare")
+    </ResponseField>
+    
+    <ResponseField name="primary_service" type="string">
+      Primary service from the validated services catalog
+    </ResponseField>
+    
+    <ResponseField name="secondary_service" type="string" optional>
+      Secondary service if applicable (must be from validated catalog)
+    </ResponseField>
+    
+    <ResponseField name="fit_score" type="number">
+      Lead quality score from 0-100 indicating how well the business matches your target profile
+    </ResponseField>
+    
+    <ResponseField name="reasoning" type="string">
+      AI-generated explanation for the fit score with specific details
+    </ResponseField>
+    
+    <ResponseField name="outreach_angle" type="string">
+      Personalized outreach recommendation tailored to the business
+    </ResponseField>
+    
+    <ResponseField name="_usage" type="object">
+      Token usage for this specific evaluation
+      <Expandable title="Usage Metadata">
+        <ResponseField name="prompt_tokens" type="number">
+          Tokens in the prompt
+        </ResponseField>
+        <ResponseField name="completion_tokens" type="number">
+          Tokens in the response
+        </ResponseField>
+        <ResponseField name="total_tokens" type="number">
+          Total tokens for this request
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Raises:**
+- `Exception` - If services.json cannot be loaded (CRITICAL error)
+- `Exception` - If system_prompt.md cannot be loaded (CRITICAL error)
+- `Exception` - If LLM returns invalid JSON after all retries
+- `ValueError` - If selected primary_service is not in the approved services catalog
+- `ValueError` - If selected secondary_service is not in the approved services catalog
+- `Exception` - If Groq API errors persist after all retries
+
+<Warning>
+The method validates all service selections against services.json. Invalid services will raise a `ValueError` to ensure data integrity.
+</Warning>
+
+## Usage Examples
+
+### Basic Evaluation
+
+```python
+from evaluator import Evaluator
+import json
+
+evaluator = Evaluator()
+
+content = """
+Welcome to Austin Premier Plumbing. We are a local plumbing company 
+serving Austin, Texas and surrounding areas. We offer emergency pipe repairs, 
+water heater installation, drain cleaning, and 24/7 emergency services.
+Call us today for a free quote!
+"""
+
+try:
+    result = evaluator.evaluate(content)
+    print(json.dumps(result, indent=2))
+    
+    print(f"\nBusiness: {result['business_name']}")
+    print(f"Service: {result['primary_service']}")
+    print(f"Score: {result['fit_score']}/100")
+    print(f"Reasoning: {result['reasoning']}")
+    print(f"Tokens Used: {result['_usage']['total_tokens']}")
+    
+except Exception as e:
+    print(f"Evaluation failed: {e}")
+```
+
+### Evaluation with RAG Context
+
+```python
+from evaluator import Evaluator
+from rag import RAG
+
+evaluator = Evaluator()
+rag = RAG()
+
+content = "We help small businesses grow with digital marketing services."
+
+# Retrieve relevant knowledge
+rag_context = rag.retrieve(content, limit=3)
+
+# Evaluate with additional context
+result = evaluator.evaluate(content, rag_context=rag_context)
+
+print(f"Evaluation with {len(rag_context)} knowledge items")
+print(f"Score: {result['fit_score']}")
+print(f"Outreach: {result['outreach_angle']}")
+```
+
+### Custom Retry Logic
+
+```python
+from evaluator import Evaluator
+import time
+
+evaluator = Evaluator()
+content = "Medical clinic in downtown Yangon offering general practice services."
+
+# Try up to 3 times (initial + 2 retries)
+try:
+    result = evaluator.evaluate(content, retry_count=2)
+    print(f"Success after potential retries: {result['business_name']}")
+except Exception as e:
+    print(f"Failed after all retries: {e}")
+```
+
+### Monitoring Token Usage
+
+```python
+from evaluator import Evaluator
+
+evaluator = Evaluator()
+
+# Process multiple leads
+leads = [
+    "Local restaurant in Bangkok",
+    "E-commerce store selling electronics",
+    "Software consulting company"
+]
+
+for lead_content in leads:
+    result = evaluator.evaluate(lead_content)
+    print(f"Processed: {result['business_name']}")
+    print(f"Request tokens: {result['_usage']['total_tokens']}")
+
+# Check cumulative usage
+print(f"\nTotal Usage Across All Evaluations:")
+print(f"Prompt Tokens: {Evaluator.total_usage['prompt_tokens']}")
+print(f"Completion Tokens: {Evaluator.total_usage['completion_tokens']}")
+print(f"Total Tokens: {Evaluator.total_usage['total_tokens']}")
+```
+
+### Checking System Status
+
+```python
+from evaluator import Evaluator
+
+evaluator = Evaluator()
+
+print(f"System Status: {Evaluator.status}")
+print(f"Quota OK: {Evaluator.quota_ok}")
+print(f"Last Run: {Evaluator.last_run_time}")
+
+try:
+    result = evaluator.evaluate("Test content")
+except Exception as e:
+    # Status updates automatically on rate limit errors
+    print(f"Error: {e}")
+    print(f"Updated Status: {Evaluator.status}")
+    print(f"Quota OK: {Evaluator.quota_ok}")
+```
+
+## Service Validation
+
+The Evaluator automatically validates all service selections against the services catalog:
+
+<Steps>
+  <Step title="Load Services Catalog">
+    Loads services from `services/services.json` at evaluation time
+  </Step>
+  
+  <Step title="Extract Valid Names">
+    Recursively extracts all service names from the JSON structure
+  </Step>
+  
+  <Step title="Validate Primary Service">
+    Ensures `primary_service` matches a name in the catalog
+  </Step>
+  
+  <Step title="Validate Secondary Service">
+    If present, ensures `secondary_service` also matches the catalog
+  </Step>
+  
+  <Step title="Raise on Mismatch">
+    Throws `ValueError` if any service is not in the approved list
+  </Step>
+</Steps>
+
+## JSON Response Parsing
+
+The Evaluator uses advanced parsing to handle Groq's JSON output:
+
+- Requests `response_format={"type": "json_object"}` for structured output
+- Handles cases where Groq adds markdown code blocks around JSON
+- Extracts JSON from text by finding first `{` to last `}`
+- Validates JSON parsing before returning
+
+<Info>
+The parser is robust against common LLM output variations, including markdown code blocks and surrounding text.
+</Info>
+
+## Configuration
+
+### Required Files
+
+**services/services.json**
+```json
+{
+  "categories": [
+    {
+      "name": "Home Services",
+      "services": [
+        {"name": "Plumbing"},
+        {"name": "HVAC"},
+        {"name": "Electrical"}
+      ]
+    }
+  ]
+}
+```
+
+**prompts/system_prompt.md**
+```markdown
+You are an expert lead evaluator. Analyze the website content and provide a structured evaluation.
+
+Available services:
+[SERVICES_JSON]
+
+Provide your response as JSON with these fields:
+- business_name
+- business_type
+- primary_service
+- secondary_service (optional)
+- fit_score (0-100)
+- reasoning
+- outreach_angle
+```
+
+<Note>
+The `[SERVICES_JSON]` placeholder in the system prompt is automatically replaced with the contents of services.json.
+</Note>
+
+## Rate Limits and Quotas
+
+<Warning>
+Groq has rate limits that vary by plan:
+- Free tier: 30 requests/minute, 14,400 requests/day
+- Paid tier: Higher limits based on your plan
+
+The Evaluator automatically tracks quota status and updates `Evaluator.quota_ok` on rate limit errors.
+</Warning>
+
+## Performance
+
+Typical evaluation metrics:
+- **Latency**: 1-3 seconds per evaluation
+- **Tokens per request**: 1,500-3,000 tokens (varies by content length)
+- **Temperature**: 0.1 (optimized for consistent, deterministic outputs)
+
+## Related Components
+
+- [LeadEngine](/api/lead-engine) - Orchestrates the full pipeline including Evaluator
+- [RAG](/api/rag) - Provides context to enhance evaluations
+- [Extractor](/api/extractor) - Extracts content for evaluation

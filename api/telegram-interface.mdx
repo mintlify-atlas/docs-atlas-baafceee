@@ -1,0 +1,414 @@
+---
+title: 'Telegram Bot Interface'
+description: 'Telegram bot for lead analysis with rate limiting and command handlers'
+---
+
+## Overview
+
+The Telegram Bot Interface provides a conversational interface for the Lead Intelligence Engine. Users can analyze business URLs, check system status, and view model information through Telegram commands.
+
+## Configuration
+
+The bot requires a Telegram Bot Token from [@BotFather](https://t.me/botfather):
+
+```bash
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+```
+
+<Warning>
+The bot will not start if `TELEGRAM_BOT_TOKEN` is missing or set to the placeholder value. A critical error will be printed to console.
+</Warning>
+
+## Rate Limiting
+
+The bot implements in-memory rate limiting to prevent abuse:
+
+### Configuration Constants
+
+```python
+RATE_LIMIT_MINUTES = 1
+MAX_REQUESTS_PER_PERIOD = 3
+```
+
+<ParamField path="RATE_LIMIT_MINUTES" type="int" default="1">
+  Time window for rate limiting in minutes
+</ParamField>
+
+<ParamField path="MAX_REQUESTS_PER_PERIOD" type="int" default="3">
+  Maximum analysis requests allowed per user within the time window
+</ParamField>
+
+### Rate Limit Storage
+
+```python
+USER_REQUESTS = {}  # {user_id: [timestamps]}
+```
+
+Tracks request timestamps per user ID. Old timestamps are automatically cleaned up.
+
+### `is_rate_limited()`
+
+Checks if a user has exceeded the rate limit.
+
+<ParamField path="user_id" type="int" required>
+  Telegram user ID to check
+</ParamField>
+
+#### Returns
+
+<ResponseField name="is_limited" type="bool">
+  `True` if user has exceeded rate limit, `False` otherwise
+</ResponseField>
+
+#### Implementation
+
+```python
+def is_rate_limited(user_id: int) -> bool:
+    """Checks if a user is exceeding the rate limit."""
+    now = time.time()
+    if user_id not in USER_REQUESTS:
+        USER_REQUESTS[user_id] = []
+    
+    # Clean up old timestamps
+    USER_REQUESTS[user_id] = [t for t in USER_REQUESTS[user_id] if now - t < (RATE_LIMIT_MINUTES * 60)]
+    
+    if len(USER_REQUESTS[user_id]) >= MAX_REQUESTS_PER_PERIOD:
+        return True
+    
+    USER_REQUESTS[user_id].append(now)
+    return False
+```
+
+<Note>
+Rate limits are per-user and reset after the time window expires. The system only counts successful analysis requests.
+</Note>
+
+<Warning>
+Rate limit data is stored in-memory and will reset when the bot restarts. For production use, consider implementing persistent storage.
+</Warning>
+
+## Bot Commands
+
+### `/start`
+
+Sends a welcome message with available commands.
+
+**Handler:** `start()`
+
+**Response:**
+```
+Welcome! I'm the Lead Intelligence Engine Bot. Generate leads for reachout purposes
+
+Commands:
+/analyze <url> - Analyze a business website
+/model - Show the current LLM model
+/status - Show the current status of the AI
+```
+
+**Implementation:** `~/workspace/source/telegram_bot.py:40`
+
+---
+
+### `/analyze <url>`
+
+Analyzes a business website and stores results in CRM.
+
+**Handler:** `analyze_command()`
+
+<ParamField path="url" type="str" required>
+  Business website or social media URL to analyze. Must be provided as command argument.
+</ParamField>
+
+#### Response Flow
+
+1. **Validation**: Checks if URL argument is provided
+   ```
+   Please provide a URL. Usage: /analyze <url>
+   ```
+
+2. **Rate Limit Check**: If user exceeded limits
+   ```
+   RATE LIMIT EXCEEDED. Please wait a minute before analyzing more URLs.
+   ```
+
+3. **Processing Message**:
+   ```
+   Analyzing {url}...
+   This may take up to 20 seconds.
+   ```
+
+4. **Success Response**:
+   ```
+   Analysis Complete for {business_name}
+
+   Type: {business_type}
+   Primary Service: {primary_service}
+   Fit Score: {fit_score}/100
+
+   Reasoning: {reasoning}
+
+   Outreach Angle: {outreach_angle}
+
+   ⚡ **Latency:** {latency}
+
+   Result saved to Coda CRM.
+   ```
+
+5. **Duplicate Detection**:
+   ```
+   URL already exists in CRM:
+   {url}
+
+   {skip_message}
+   ```
+
+6. **Error Response**:
+   ```
+   Error processing {url}:
+
+   {error_message}
+   ```
+
+<Note>
+Facebook URLs receive a special error message: "Facebook public metadata unavailable. Please provide website link if available."
+</Note>
+
+**Implementation:** `~/workspace/source/telegram_bot.py:52`
+
+---
+
+### `/model`
+
+Displays the current LLM model being used by the AI Evaluator.
+
+**Handler:** `model_command()`
+
+**Response:**
+```
+Current LLM Model:
+`{model_name}`
+```
+
+Example:
+```
+Current LLM Model:
+`gpt-4-turbo-preview`
+```
+
+**Implementation:** `~/workspace/source/telegram_bot.py:113`
+
+---
+
+### `/status`
+
+Shows comprehensive AI system status including quota, token usage, and activity.
+
+**Handler:** `status_command()`
+
+**Response:**
+```
+SYSTEM STATUS REPORT
+━━━━━━━━━━━━━━━━━━━━
+STATUS: {status} {status_indicator}
+LLM QUOTA: {quota_text}
+MODEL: `{model}`
+━━━━━━━━━━━━━━━━━━━━
+
+TOKEN CONSUMPTION
+• Total: `{total_tokens:,}`
+• Prompt: `{prompt_tokens:,}`
+• Completion: `{completion_tokens:,}`
+
+LAST ACTIVITY: `{last_time}`
+━━━━━━━━━━━━━━━━━━━━
+_Updates are tracked per session._
+```
+
+#### Status Indicators
+
+<ResponseField name="status_indicator" type="str">
+  - `[ONLINE]` - System operational, quota available
+  - `[OFFLINE/LIMITED]` - Rate limit reached or out of tokens
+</ResponseField>
+
+<ResponseField name="quota_text" type="str">
+  - `WITHIN LIMITS` - Normal operation
+  - `RATE LIMIT REACHED / OUT OF TOKENS` - Service degraded
+</ResponseField>
+
+**Implementation:** `~/workspace/source/telegram_bot.py:124`
+
+---
+
+### Plain Text URLs
+
+The bot also accepts URLs sent as plain text messages (without `/analyze` command).
+
+**Handler:** `handle_text_url()`
+
+**Behavior:**
+- URLs starting with `http://` or `https://` are automatically processed
+- Non-URL text receives response: `"I only analyze URLs. Use /analyze <url> or just send the link."`
+
+**Implementation:** `~/workspace/source/telegram_bot.py:63`
+
+## Core Processing Function
+
+### `process_lead_analysis()`
+
+Core logic for processing lead analysis requests. Used by both `/analyze` command and plain text URL handler.
+
+<ParamField path="update" type="Update" required>
+  Telegram Update object containing message context
+</ParamField>
+
+<ParamField path="url" type="str" required>
+  Business URL to analyze
+</ParamField>
+
+#### Processing Steps
+
+1. **Rate Limit Check**: Validates user hasn't exceeded request quota
+2. **Status Message**: Sends "Analyzing..." message to user
+3. **Lead Engine Execution**: Creates `LeadEngine()` instance and calls `process_url()`
+4. **Result Handling**: 
+   - Checks for duplicate URLs (`_status == "skipped"`)
+   - Formats success response with business insights
+   - Handles errors with user-friendly messages
+5. **Message Update**: Edits status message with final result
+
+**Implementation:** `~/workspace/source/telegram_bot.py:73`
+
+## Error Handling
+
+### Global Error Handler
+
+```python
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log the error and send a telegram message to notify the developer."""
+    logger.error("Exception while handling an update:", exc_info=context.error)
+    if isinstance(update, Update) and update.message:
+        await update.message.reply_text(f"INTERNAL ERROR: An error occurred while processing your request.")
+```
+
+Catches all unhandled exceptions and:
+1. Logs error with full traceback to logger
+2. Sends generic error message to user
+
+**Implementation:** `~/workspace/source/telegram_bot.py:160`
+
+### Command-Specific Error Handling
+
+**Model Command:**
+```python
+await update.message.reply_text(f"Could not retrieve model info: {e}")
+```
+
+**Status Command:**
+```python
+await update.message.reply_text(f"ERROR: Could not retrieve AI status: {e}")
+```
+
+**Analysis Errors:**
+- Facebook-specific: "Facebook public metadata unavailable. Please provide website link if available."
+- Generic: `f"Error processing {url}:\n\n{error_msg}"`
+
+## Message Formatting
+
+The bot uses Telegram's Markdown formatting:
+
+- **Bold**: `**text**`
+- **Code**: `` `text` ``
+- **Italic**: `_text_`
+
+All formatted responses use `parse_mode='Markdown'`.
+
+<Warning>
+Ensure special characters in dynamic content are properly escaped to avoid Markdown parsing errors.
+</Warning>
+
+## Logging Configuration
+
+Minimal logging setup (WARNING level only):
+
+```python
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.WARNING
+)
+```
+
+Only logs:
+- Analysis errors (from exception handlers)
+- Status command errors
+- Unhandled exceptions (via error_handler)
+
+## Application Lifecycle
+
+The bot runs in polling mode:
+
+```python
+application = ApplicationBuilder().token(TOKEN).build()
+
+# Register handlers
+application.add_handler(CommandHandler('start', start))
+application.add_handler(CommandHandler('analyze', analyze_command))
+application.add_handler(CommandHandler('model', model_command))
+application.add_handler(CommandHandler('status', status_command))
+application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_url))
+application.add_error_handler(error_handler)
+
+# Start polling
+application.run_polling()
+```
+
+<Note>
+Handlers are registered in order. Command handlers take precedence over the text message handler due to the `~filters.COMMAND` filter.
+</Note>
+
+## Integration with Lead Engine
+
+The bot creates a new `LeadEngine()` instance for each request:
+
+```python
+engine = LeadEngine()
+result = engine.process_url(url)
+```
+
+This ensures:
+- Fresh state per analysis
+- No cross-contamination between user requests
+- Latest configuration and credentials loaded
+
+## Example Conversation Flow
+
+```
+User: /start
+Bot: Welcome! I'm the Lead Intelligence Engine Bot...
+
+User: https://example.com
+Bot: Analyzing https://example.com...
+     This may take up to 20 seconds.
+
+Bot: Analysis Complete for Example Business
+     
+     Type: E-commerce
+     Primary Service: Online Retail
+     Fit Score: 85/100
+     
+     Reasoning: Strong online presence with clear product offerings...
+     
+     Outreach Angle: Offer conversion rate optimization services...
+     
+     ⚡ **Latency:** 12.4s
+     
+     Result saved to Coda CRM.
+
+User: /status
+Bot: SYSTEM STATUS REPORT
+     ━━━━━━━━━━━━━━━━━━━━
+     STATUS: operational [ONLINE]
+     LLM QUOTA: WITHIN LIMITS
+     MODEL: `gpt-4-turbo-preview`
+     ...
+```

@@ -1,0 +1,258 @@
+---
+title: 'Services Catalog'
+description: 'Complete catalog of services available for matching with qualified leads'
+icon: 'grid-2'
+---
+
+## Overview
+
+The Lead Intelligence Engine uses a structured services catalog to match businesses with appropriate solutions. Services are categorized into **Technical Services** and **Marketing Services**, each with specific ideal customer profiles and use case signals.
+
+## Technical Services
+
+### Foundation Package
+
+<AccordionGroup>
+  <Accordion title="Package Details">
+    **Category**: Website Development
+
+    **Description**: 1–3 page static website, portfolio or business showcase, mobile responsive, social media integration, analytics ready.
+
+    **Delivery**: Static website optimized for small businesses and personal brands
+  </Accordion>
+
+  <Accordion title="Ideal For">
+    - SMEs
+    - Personal Brands
+    - Startups
+    - Agencies
+    - Local manual businesses
+  </Accordion>
+
+  <Accordion title="Use Case Signals">
+    The system detects these signals to recommend this service:
+
+    - No website
+    - Basic online presence needed
+    - Small business
+    - Facebook-only business
+    - Outdated design
+  </Accordion>
+</AccordionGroup>
+
+<Info>
+  **Best Match**: Businesses with no existing website or only social media presence
+</Info>
+
+### Custom Digital Solutions
+
+<AccordionGroup>
+  <Accordion title="Package Details">
+    **Category**: Advanced Development
+
+    **Description**: Corporate websites, web applications, mobile applications, desktop software, internal systems, full strategy planning.
+
+    **Delivery**: Enterprise-grade solutions with strategic planning
+  </Accordion>
+
+  <Accordion title="Ideal For">
+    - Enterprises
+    - Traditional Businesses
+    - NGOs
+    - E-commerce
+  </Accordion>
+
+  <Accordion title="Use Case Signals">
+    The system detects these signals to recommend this service:
+
+    - Complex operations
+    - Multiple departments
+    - Internal systems needed
+    - High transaction volume
+  </Accordion>
+</AccordionGroup>
+
+<Info>
+  **Best Match**: Larger organizations with complex operational needs
+</Info>
+
+## Marketing Services
+
+### Basic Marketing Package
+
+<AccordionGroup>
+  <Accordion title="Package Details">
+    **Focus**: Content + Branding foundation
+
+    **Delivery**: Foundational content strategy and consistent posting framework
+  </Accordion>
+
+  <Accordion title="Ideal For">
+    - New businesses
+    - Consistent posting needs
+  </Accordion>
+
+  <Accordion title="Use Case Signals">
+    - Low posting frequency
+    - Stock-heavy content
+  </Accordion>
+</AccordionGroup>
+
+### Standard Marketing Package
+
+<AccordionGroup>
+  <Accordion title="Package Details">
+    **Focus**: Messaging + USP + Content Calendar
+
+    **Delivery**: Strategic messaging development with structured content planning
+  </Accordion>
+
+  <Accordion title="Ideal For">
+    - Growth-stage businesses
+    - Service providers
+  </Accordion>
+
+  <Accordion title="Use Case Signals">
+    - Post-only strategy
+    - No clear USP
+  </Accordion>
+</AccordionGroup>
+
+### Premium Marketing Package
+
+<AccordionGroup>
+  <Accordion title="Package Details">
+    **Focus**: Deep Analysis + Motion Content + Priority Consult
+
+    **Delivery**: Comprehensive analysis with video/motion content production
+  </Accordion>
+
+  <Accordion title="Ideal For">
+    - High-ticket services
+    - Professional brands
+  </Accordion>
+
+  <Accordion title="Use Case Signals">
+    - High engagement but low conversion
+    - Needs video/motion content
+  </Accordion>
+</AccordionGroup>
+
+### Enterprise Marketing Package
+
+<AccordionGroup>
+  <Accordion title="Package Details">
+    **Focus**: Full Strategy + Roadmap + High Volume Content
+
+    **Delivery**: Complete strategic framework with multi-channel execution
+  </Accordion>
+
+  <Accordion title="Ideal For">
+    - Large corporations
+    - Regional brands
+  </Accordion>
+
+  <Accordion title="Use Case Signals">
+    - Multi-channel needs
+    - Scaling fast
+  </Accordion>
+</AccordionGroup>
+
+## Service Matching Logic
+
+The Lead Intelligence Engine matches services using a three-step process:
+
+### 1. Signal Detection
+
+The system analyzes website content and digital presence to detect use case signals:
+
+```json
+{
+  "detected_signals": [
+    "no website",
+    "facebook-only business",
+    "basic online presence"
+  ]
+}
+```
+
+### 2. Profile Matching
+
+Signals are matched against `ideal_for` and `use_case_signals` fields in the services catalog:
+
+```json
+{
+  "business_profile": "Small Restaurant",
+  "detected_signals": ["no website", "facebook-only business"],
+  "matched_service": "Foundation Package",
+  "match_confidence": 85
+}
+```
+
+### 3. Industry Exclusion Logic
+
+The system applies industry-specific exclusions before final recommendations:
+
+<Note>
+  **Digital Marketing Agencies**: Never recommend Marketing Services. Focus on Technology Services only.
+
+  **Software/IT Companies**: Never recommend Technology Services. Focus on Marketing Services only.
+</Note>
+
+### Example Matching Flow
+
+```json
+{
+  "business_name": "Golden Spoon Cafe",
+  "business_type": "F&B - Cafe",
+  "detected_signals": [
+    "facebook-only business",
+    "no website",
+    "low posting frequency"
+  ],
+  "primary_service": "Foundation Package",
+  "secondary_service": "Basic Marketing Package",
+  "fit_score": 92,
+  "reasoning": "No existing website and weak social presence indicate need for both web foundation and content strategy."
+}
+```
+
+## Service Selection Rules
+
+<AccordionGroup>
+  <Accordion title="Primary Service Selection">
+    - **ONE** primary service must be selected
+    - Choose based on highest-priority need
+    - Match against `ideal_for` and `use_case_signals`
+    - Consider digital maturity level
+  </Accordion>
+
+  <Accordion title="Secondary Service Selection">
+    - Optional complementary service
+    - Must add clear value (e.g., website + marketing)
+    - Return `null` if no clear secondary fit
+    - Avoid redundant combinations
+  </Accordion>
+
+  <Accordion title="Fit Score Calculation">
+    Score from 0-100 based on:
+    - Number of matching use case signals
+    - Alignment with `ideal_for` profile
+    - Business size and maturity indicators
+    - Digital presence gaps
+  </Accordion>
+</AccordionGroup>
+
+## Source of Truth
+
+<Info>
+  All service recommendations MUST come from `~/workspace/source/services/services.json`. The system cannot hallucinate or create services outside this catalog.
+</Info>
+
+Service names must match exactly:
+- "Foundation Package"
+- "Custom Digital Solutions"
+- "Basic Marketing Package"
+- "Standard Marketing Package"
+- "Premium Marketing Package"
+- "Enterprise Marketing Package"

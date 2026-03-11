@@ -1,0 +1,423 @@
+---
+title: "Duplicate Detection"
+description: "URL-based deduplication prevents redundant CRM entries"
+---
+
+## Overview
+
+The Lead Intelligence Engine prevents duplicate CRM entries by checking if a business URL already exists in Coda before inserting new records. This ensures your CRM stays clean and prevents wasted analysis on already-qualified leads.
+
+<Info>
+Duplication check is performed **after** AI evaluation but **before** CRM insertion, so you don't waste Groq tokens on duplicates.
+</Info>
+
+## How It Works
+
+<Steps>
+  <Step title="AI Evaluation Completes">
+    The engine extracts content, retrieves RAG context, and gets AI analysis.
+  </Step>
+  <Step title="Duplicate Check">
+    Calls `CodaClient.fetch_row_by_url()` to search Coda by Business URL.
+  </Step>
+  <Step title="Decision">
+    - **If duplicate found**: Return `{"_status": "skipped", "_message": "Duplicate found in CRM"}`
+    - **If new**: Proceed to `CodaClient.insert_row()`
+  </Step>
+</Steps>
+
+```python core.py (lines 56-61)
+# Check for duplicates first
+if self.coda.fetch_row_by_url(url):
+    result["_status"] = "skipped"
+    result["_message"] = "Duplicate found in CRM"
+    return result
+
+self.coda.insert_row(result)
+```
+
+## Implementation Details
+
+### Coda Search Query
+
+The `fetch_row_by_url()` method uses Coda's search API:
+
+```python coda_client.py (lines 38-62)
+def fetch_row_by_url(self, url):
+    """Checks if a row with the given Business URL already exists."""
+    # Properly quote the URL for the query
+    query = f'"{url}"'
+    api_url = f"https://coda.io/apis/v1/docs/{self.doc_id}/tables/{self.table_id}/rows"
+    params = {
+        "query": f'Business URL:{query}',
+        "limit": 1
+    }
+
+    response = requests.get(api_url, headers=self._get_headers(), params=params)
+    response.raise_for_status()
+    items = response.json().get('items', [])
+    return len(items) > 0
+```
+
+<ParamField path="query" type="string">
+  Coda query format: `column_name:"value"`
+  
+  Example: `Business URL:"https://example.com"`
+</ParamField>
+
+<ParamField path="limit" type="integer" default="1">
+  Only fetch 1 row since we just need to know if any match exists.
+</ParamField>
+
+### URL Matching Logic
+
+The system performs **exact string matching** on the full URL:
+
+```
+https://example.com       ≠ http://example.com        (scheme differs)
+https://example.com       ≠ https://example.com/       (trailing slash)
+https://www.example.com   ≠ https://example.com        (subdomain differs)
+```
+
+<Warning>
+URL matching is **case-sensitive** and **character-exact**. `HTTPS://Example.com` and `https://example.com` are treated as different URLs.
+</Warning>
+
+## Edge Cases
+
+### URL Normalization
+
+The engine does **NOT** normalize URLs before checking duplicates:
+
+<AccordionGroup>
+  <Accordion title="Trailing Slashes">
+    **Scenario**: User analyzes both:
+    - `https://example.com`
+    - `https://example.com/`
+    
+    **Result**: Both are inserted as separate records.
+    
+    **Mitigation**: Train users to use consistent URL formats, or implement normalization:
+    ```python
+    url = url.rstrip('/')  # Remove trailing slash
+    ```
+  </Accordion>
+  
+  <Accordion title="WWW Subdomain">
+    **Scenario**: User analyzes both:
+    - `https://example.com`
+    - `https://www.example.com`
+    
+    **Result**: Both inserted (even if they resolve to the same site).
+    
+    **Mitigation**: Implement URL canonicalization:
+    ```python
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if parsed.hostname.startswith('www.'):
+        url = url.replace('www.', '', 1)
+    ```
+  </Accordion>
+  
+  <Accordion title="HTTP vs HTTPS">
+    **Scenario**: User analyzes:
+    - `http://example.com`
+    - `https://example.com`
+    
+    **Result**: Both inserted as different businesses.
+    
+    **Mitigation**: Force HTTPS:
+    ```python
+    url = url.replace('http://', 'https://')
+    ```
+  </Accordion>
+  
+  <Accordion title="Query Parameters">
+    **Scenario**: User analyzes:
+    - `https://example.com`
+    - `https://example.com?utm_source=facebook`
+    
+    **Result**: Both inserted (query params treated as part of URL).
+    
+    **Mitigation**: Strip query parameters:
+    ```python
+    from urllib.parse import urlparse, urlunparse
+    parsed = urlparse(url)
+    url = urlunparse(parsed._replace(query='', fragment=''))
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Performance
+
+### API Latency
+
+Coda search typically takes:
+- **Average**: 500-1,000ms
+- **95th percentile**: 1,500ms
+- **Timeout**: 10s (configured)
+
+<Info>
+Duplicate check adds ~1s to total pipeline latency, but prevents wasted Groq tokens and keeps CRM clean.
+</Info>
+
+### Coda API Limits
+
+- **Rate Limit**: 100 requests per minute per API token
+- **Concurrency**: Up to 10 concurrent requests
+
+For high-volume batch processing (>100 URLs/min), implement request throttling:
+
+```python
+import time
+from threading import Lock
+
+class RateLimiter:
+    def __init__(self, max_per_minute=100):
+        self.max_per_minute = max_per_minute
+        self.requests = []
+        self.lock = Lock()
+    
+    def wait_if_needed(self):
+        with self.lock:
+            now = time.time()
+            # Remove requests older than 1 minute
+            self.requests = [t for t in self.requests if now - t < 60]
+            
+            if len(self.requests) >= self.max_per_minute:
+                sleep_time = 60 - (now - self.requests[0])
+                time.sleep(sleep_time)
+            
+            self.requests.append(now)
+```
+
+## Error Handling
+
+The system gracefully handles duplicate check failures:
+
+```python coda_client.py (lines 60-62)
+except Exception as e:
+    logger.warning(f"Duplicate check failed (Coda API): {e}")
+    return False  # Assume not duplicate if check fails
+```
+
+<Warning>
+If the duplicate check fails (network error, Coda API down), the engine **assumes no duplicate** and proceeds with insertion. This prevents valid leads from being lost due to transient errors.
+</Warning>
+
+### Common Errors
+
+<AccordionGroup>
+  <Accordion title="401 Unauthorized">
+    **Cause**: Invalid `CODA_API_TOKEN` in `.env`.
+    
+    **Fix**: Regenerate token at [coda.io/account](https://coda.io/account).
+  </Accordion>
+  
+  <Accordion title="404 Not Found">
+    **Cause**: Invalid `CODA_DOC_ID` or `CODA_TABLE_ID`.
+    
+    **Fix**: Get correct IDs from Coda table URL:
+    ```
+    https://coda.io/d/<DOC_ID>/table/<TABLE_ID>
+    ```
+  </Accordion>
+  
+  <Accordion title="Timeout">
+    **Cause**: Coda API slow or unresponsive.
+    
+    **Behavior**: After 10s timeout, duplicate check returns `False` (not duplicate).
+    
+    **Fix**: Retry the URL later, or increase timeout in `coda_client.py`.
+  </Accordion>
+</AccordionGroup>
+
+## Monitoring Duplicates
+
+### CLI Output
+
+When a duplicate is detected:
+
+```bash
+python main.py https://example.com
+
+Analyzing https://example.com...
+
+--- Evaluation Result ---
+{
+  "business_name": "Example Business",
+  "business_type": "E-commerce",
+  "primary_service": "Foundation Package",
+  "fit_score": 82,
+  "reasoning": "Small online store needs website."
+}
+------------------------
+
+SKIPPED CRM INSERTION: https://example.com
+Reason: Duplicate found in CRM
+```
+
+<Note>
+The AI evaluation still runs and displays results, but no CRM insertion occurs. This lets you verify the analysis even for duplicates.
+</Note>
+
+### Telegram Bot Output
+
+The bot displays a different message for duplicates:
+
+```
+URL already exists in CRM:
+https://example.com
+
+Duplicate found in CRM
+```
+
+## Manual Duplicate Resolution
+
+If you need to re-analyze an existing lead:
+
+<Steps>
+  <Step title="Delete from Coda">
+    Manually delete the row in your Coda table.
+  </Step>
+  <Step title="Re-run Analysis">
+    ```bash
+    python main.py https://example.com
+    ```
+    The URL will now be treated as new and inserted.
+  </Step>
+</Steps>
+
+<Tip>
+If you want to update an existing lead without deleting, use Coda's API to update the row directly instead of re-analyzing through the engine.
+</Tip>
+
+## Batch Deduplication
+
+For processing large URL lists with duplicates:
+
+```bash
+# Filter URLs before processing
+cat urls.txt | while read url; do
+  python main.py "$url" 2>&1 | grep -q "SKIPPED" || echo "$url processed"
+done
+```
+
+Or use Python for pre-filtering:
+
+```python batch_process.py
+from core import LeadEngine
+
+engine = LeadEngine()
+urls = open('urls.txt').read().splitlines()
+
+for url in urls:
+    try:
+        # Check duplicate first (no AI call)
+        if engine.coda.fetch_row_by_url(url):
+            print(f"SKIP: {url} (duplicate)")
+            continue
+        
+        # Process new URLs
+        result = engine.process_url(url)
+        print(f"SUCCESS: {url}")
+    except Exception as e:
+        print(f"ERROR: {url} - {e}")
+```
+
+<Card title="CLI Usage Guide" icon="terminal" href="/guides/cli-usage">
+  Learn batch processing patterns and automation
+</Card>
+
+## Coda Column Requirement
+
+For duplicate detection to work, your Coda table **must** have a column named exactly:
+
+```
+Business URL
+```
+
+<Warning>
+Column name is case-sensitive. "Business url" or "business_url" will NOT work.
+</Warning>
+
+### Coda Table Setup
+
+When creating your Coda table, ensure these columns exist:
+
+| Column Name | Type | Required |
+|-------------|------|----------|
+| Business URL | Text | Yes |
+| Business Name | Text | Yes |
+| Business Type | Text | Yes |
+| Primary Service | Text | Yes |
+| Secondary Service | Text | No |
+| Fit Score | Number | Yes |
+| Reasoning | Text | Yes |
+| Outreach Angle | Text | Yes |
+
+<Card title="Coda Integration Guide" icon="database" href="/guides/coda-integration">
+  Complete setup instructions for Coda CRM
+</Card>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="URL Consistency">
+    Train users to always use the same URL format:
+    - ✅ Always include `https://`
+    - ✅ Remove `www.` prefix
+    - ✅ Remove trailing slashes
+    - ✅ Remove query parameters
+    
+    Or implement normalization in `extractor.py` before processing.
+  </Accordion>
+  
+  <Accordion title="Bulk Upload">
+    When importing historical leads, add them directly to Coda instead of processing through the engine. This populates the Business URL column for duplicate detection.
+  </Accordion>
+  
+  <Accordion title="URL Validation">
+    Validate URLs before analysis:
+    ```python
+    from urllib.parse import urlparse
+    
+    def is_valid_url(url):
+        try:
+            result = urlparse(url)
+            return all([result.scheme, result.netloc])
+        except:
+            return False
+    ```
+  </Accordion>
+  
+  <Accordion title="Re-qualification Period">
+    Consider adding a "Last Analyzed" date column in Coda. Re-analyze leads after 6-12 months to detect changes in digital maturity.
+  </Accordion>
+</AccordionGroup>
+
+## Future Enhancements
+
+Potential improvements to duplicate detection:
+
+1. **Fuzzy Matching**: Detect similar URLs with minor differences
+2. **Domain-Level Deduplication**: Treat `blog.example.com` and `shop.example.com` as same business
+3. **Business Name Matching**: If URL changes but business name matches, flag as potential duplicate
+4. **Canonical URL Resolution**: Follow redirects to find true destination before checking
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Coda Integration" icon="database" href="/guides/coda-integration">
+    Complete guide to Coda setup and troubleshooting
+  </Card>
+  <Card title="CodaClient API" icon="code" href="/api/coda-client">
+    Programmatic usage of CRM functions
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/concepts/architecture">
+    How duplicate detection fits in the pipeline
+  </Card>
+  <Card title="CLI Usage" icon="terminal" href="/guides/cli-usage">
+    Batch processing with duplicate handling
+  </Card>
+</CardGroup>

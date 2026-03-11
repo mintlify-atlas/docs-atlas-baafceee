@@ -1,0 +1,470 @@
+---
+title: 'Telegram Bot'
+description: 'Use the Lead Intelligence Engine through an interactive Telegram bot interface'
+icon: 'telegram'
+---
+
+## Overview
+
+The Telegram bot provides a conversational interface for analyzing business URLs. It includes built-in rate limiting, status monitoring, and formatted output optimized for mobile devices.
+
+## Starting the Bot
+
+### Prerequisites
+
+1. Create a Telegram bot via [@BotFather](https://t.me/botfather)
+2. Add your bot token to `.env`:
+
+```env
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+```
+
+3. Ensure all other required environment variables are configured (see [Configuration](/guides/configuration))
+
+### Launch Command
+
+Start the bot server:
+
+```bash
+python telegram_bot.py
+```
+
+Expected output:
+
+```bash
+Lead Intelligence Engine -- Application running...
+```
+
+<Tip>
+The bot runs continuously. Keep the terminal open or use a process manager like `pm2` or `systemd` for production deployments.
+</Tip>
+
+### Running in Background
+
+<Tabs>
+  <Tab title="Linux/Mac (nohup)">
+    ```bash
+    nohup python telegram_bot.py > bot.log 2>&1 &
+    ```
+    
+    Stop the bot:
+    ```bash
+    pkill -f telegram_bot.py
+    ```
+  </Tab>
+  
+  <Tab title="PM2 (Recommended)">
+    ```bash
+    # Install PM2
+    npm install -g pm2
+    
+    # Start bot
+    pm2 start telegram_bot.py --name lead-bot --interpreter python
+    
+    # View logs
+    pm2 logs lead-bot
+    
+    # Stop bot
+    pm2 stop lead-bot
+    ```
+  </Tab>
+  
+  <Tab title="systemd (Linux)">
+    Create `/etc/systemd/system/lead-bot.service`:
+    
+    ```ini
+    [Unit]
+    Description=Lead Intelligence Engine Bot
+    After=network.target
+    
+    [Service]
+    Type=simple
+    User=your_user
+    WorkingDirectory=/path/to/source
+    ExecStart=/path/to/venv/bin/python telegram_bot.py
+    Restart=always
+    
+    [Install]
+    WantedBy=multi-user.target
+    ```
+    
+    Enable and start:
+    ```bash
+    sudo systemctl enable lead-bot
+    sudo systemctl start lead-bot
+    ```
+  </Tab>
+</Tabs>
+
+## Bot Commands
+
+### /start - Welcome Message
+
+Displays bot capabilities and available commands:
+
+```
+Welcome! I'm the Lead Intelligence Engine Bot. Generate leads for reachout purposes
+
+Commands:
+/analyze <url> - Analyze a business website
+/model - Show the current LLM model
+/status - Show the current status of the AI
+```
+
+### /analyze - Analyze a Business URL
+
+Analyze a business website and add qualified leads to your CRM.
+
+**Syntax:**
+
+```
+/analyze https://example.com
+```
+
+**Example Conversation:**
+
+<Steps>
+  <Step title="Send Command">
+    ```
+    /analyze https://austinplumbing.com
+    ```
+  </Step>
+  
+  <Step title="Bot Responds with Processing Status">
+    ```
+    Analyzing https://austinplumbing.com...
+    This may take up to 20 seconds.
+    ```
+  </Step>
+  
+  <Step title="Bot Returns Analysis Result">
+    ```
+    Analysis Complete for Austin Plumbing Solutions
+    
+    Type: Plumbing Service
+    Primary Service: Foundation Package
+    Fit Score: 85/100
+    
+    Reasoning: Local service business with weak online presence. Foundation Package would establish professional web identity.
+    
+    Outreach Angle: Help local customers find you online with a mobile-responsive website that showcases your services and builds trust.
+    
+    **Latency:** 12.34s
+    
+    Result saved to Coda CRM.
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+You can also send URLs directly without the `/analyze` command. The bot automatically detects and processes any message starting with `http://` or `https://`.
+</Tip>
+
+### /model - Show Current LLM Model
+
+Displays the language model being used for analysis:
+
+```
+Current LLM Model:
+`llama-3.3-70b-versatile`
+```
+
+This helps verify which Groq model is active. The default is `llama-3.3-70b-versatile`.
+
+### /status - AI System Status
+
+Shows comprehensive system status including token usage and rate limits:
+
+```
+SYSTEM STATUS REPORT
+━━━━━━━━━━━━━━━━━━━━
+STATUS: System Online [ONLINE]
+LLM QUOTA: WITHIN LIMITS
+MODEL: `llama-3.3-70b-versatile`
+━━━━━━━━━━━━━━━━━━━━
+
+TOKEN CONSUMPTION
+• Total: `45,203`
+• Prompt: `32,145`
+• Completion: `13,058`
+
+LAST ACTIVITY: `2026-03-11 14:32:45`
+━━━━━━━━━━━━━━━━━━━━
+_Updates are tracked per session._
+```
+
+<Info>
+Token consumption resets when the bot restarts. This tracks usage for the current session only.
+</Info>
+
+## Rate Limiting
+
+The bot implements user-level rate limiting to prevent abuse:
+
+- **Limit**: 3 requests per minute per user
+- **Scope**: Per user ID (multiple users can analyze simultaneously)
+- **Reset**: Rolling 60-second window
+
+### Rate Limit Response
+
+When exceeded:
+
+```
+RATE LIMIT EXCEEDED. Please wait a minute before analyzing more URLs.
+```
+
+<Warning>
+Rate limits are enforced **per user**. If you need higher limits for production use, modify `MAX_REQUESTS_PER_PERIOD` in `telegram_bot.py:23`.
+</Warning>
+
+### Customizing Rate Limits
+
+Edit `telegram_bot.py`:
+
+```python telegram_bot.py
+RATE_LIMIT_MINUTES = 1
+MAX_REQUESTS_PER_PERIOD = 3  # Change this value
+```
+
+Example configurations:
+
+- **Stricter**: `MAX_REQUESTS_PER_PERIOD = 1` (1 per minute)
+- **Relaxed**: `MAX_REQUESTS_PER_PERIOD = 10` (10 per minute)
+- **No limit**: Comment out rate limit check in `process_lead_analysis()` (not recommended)
+
+## Example Conversations
+
+### Successful Analysis
+
+```
+User: https://localcafe.com
+
+Bot: Analyzing https://localcafe.com...
+     This may take up to 20 seconds.
+     
+     [Updates to:]
+     
+     Analysis Complete for The Local Cafe
+     
+     Type: Food & Beverage - Cafe
+     Primary Service: Foundation Package
+     Fit Score: 78/100
+     
+     Reasoning: Small F&B business with minimal web presence. A simple website would help attract local customers and showcase menu items.
+     
+     Outreach Angle: Increase foot traffic with an online menu and location map that makes it easy for customers to find you.
+     
+     **Latency:** 11.2s
+     
+     Result saved to Coda CRM.
+```
+
+### Duplicate Detection
+
+```
+User: /analyze https://already-exists.com
+
+Bot: Analyzing https://already-exists.com...
+     This may take up to 20 seconds.
+     
+     [Updates to:]
+     
+     URL already exists in CRM:
+     https://already-exists.com
+     
+     Duplicate found in CRM
+```
+
+### Facebook Link (Special Case)
+
+```
+User: https://facebook.com/localbusiness
+
+Bot: Analyzing https://facebook.com/localbusiness...
+     This may take up to 20 seconds.
+     
+     [Updates to:]
+     
+     Error processing https://facebook.com/localbusiness:
+     
+     Facebook public metadata unavailable. Please provide website link if available.
+```
+
+<Info>
+Facebook pages often block automated scraping. Ask for the business's actual website if available.
+</Info>
+
+## Error Handling
+
+The bot gracefully handles various error scenarios:
+
+### Missing URL Argument
+
+```
+User: /analyze
+
+Bot: Please provide a URL. Usage: /analyze <url>
+```
+
+### Invalid URL Format
+
+```
+User: not-a-url
+
+Bot: I only analyze URLs. Use /analyze <url> or just send the link.
+```
+
+### Network/Extraction Errors
+
+```
+Error processing https://example.com:
+
+No content could be extracted from the URL.
+```
+
+### Rate Limit Errors (AI Quota)
+
+```
+Error processing https://example.com:
+
+AI Service (Groq) Error: rate_limit_exceeded
+```
+
+Check `/status` to confirm quota status:
+
+```
+STATUS: Rate Limited / Quota Reached [OFFLINE/LIMITED]
+LLM QUOTA: RATE LIMIT REACHED / OUT OF TOKENS
+```
+
+## Monitoring & Logs
+
+The bot uses Python's logging system configured to `WARNING` level to reduce noise.
+
+### Viewing Logs
+
+<Tabs>
+  <Tab title="Direct Output">
+    ```bash
+    python telegram_bot.py
+    ```
+    Logs print to terminal in real-time.
+  </Tab>
+  
+  <Tab title="File Logging">
+    ```bash
+    python telegram_bot.py > bot.log 2>&1
+    ```
+    View logs:
+    ```bash
+    tail -f bot.log
+    ```
+  </Tab>
+  
+  <Tab title="PM2 Logs">
+    ```bash
+    pm2 logs lead-bot --lines 100
+    ```
+  </Tab>
+</Tabs>
+
+### Log Levels
+
+To increase logging verbosity, edit `telegram_bot.py:14`:
+
+```python
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO  # Change from WARNING to INFO or DEBUG
+)
+```
+
+## Troubleshooting
+
+### "CRITICAL: TELEGRAM_BOT_TOKEN not found in .env"
+
+Your `.env` file is missing the bot token:
+
+```env
+TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
+```
+
+Get a token from [@BotFather](https://t.me/botfather).
+
+### Bot Doesn't Respond
+
+1. Verify the bot is running: check terminal/logs for "Application running..."
+2. Check bot token is valid: test with `/start` command
+3. Ensure bot isn't rate limited on Telegram's side (restart bot if needed)
+4. Review logs for Python exceptions
+
+### Analysis Takes >20 Seconds
+
+Same as CLI troubleshooting:
+
+1. Check network connectivity
+2. Verify target site loads quickly
+3. Monitor Groq API status
+4. Consider websites with less content
+
+### "INTERNAL ERROR: An error occurred"
+
+Generic error handler triggered. Check logs for full stack trace:
+
+```bash
+tail -f bot.log | grep ERROR
+```
+
+## Production Deployment
+
+<CardGroup cols={2}>
+  <Card title="Use Process Manager" icon="server">
+    Deploy with PM2, systemd, or Docker to ensure the bot auto-restarts on failure
+  </Card>
+  
+  <Card title="Monitor Resources" icon="chart-line">
+    Track memory and CPU usage. The bot is lightweight but long-running processes can leak memory
+  </Card>
+  
+  <Card title="Set Up Alerts" icon="bell">
+    Configure alerts for bot downtime or error spikes
+  </Card>
+  
+  <Card title="Regular Restarts" icon="rotate">
+    Schedule daily restarts to clear session state and prevent memory bloat
+  </Card>
+</CardGroup>
+
+### Docker Deployment
+
+```dockerfile Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+CMD ["python", "telegram_bot.py"]
+```
+
+Build and run:
+
+```bash
+docker build -t lead-bot .
+docker run -d --name lead-bot --env-file .env lead-bot
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Customize bot behavior with environment variables
+  </Card>
+  
+  <Card title="Coda Integration" icon="table" href="/guides/coda-integration">
+    Set up your CRM to receive bot-analyzed leads
+  </Card>
+</CardGroup>

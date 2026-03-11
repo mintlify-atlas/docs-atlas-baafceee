@@ -1,0 +1,420 @@
+---
+title: 'Extractor'
+description: 'Intelligent web content extraction with smart fallback for SPAs and protected sites'
+icon: 'spider-web'
+---
+
+## Overview
+
+The `Extractor` class handles intelligent web content extraction with automatic fallback strategies. It uses direct HTTP requests for standard sites and falls back to Jina AI's Reader API for single-page applications (SPAs), JavaScript-heavy sites, and protected content. The class includes special handling for Facebook pages and automatic content truncation.
+
+## Constructor
+
+### Extractor()
+
+<ParamField path="timeout" type="number" default="5">
+  Request timeout in seconds. Applies to both direct fetches and Jina API requests.
+</ParamField>
+
+<ParamField path="max_chars" type="number" default="10000">
+  Maximum characters to extract from a page. Content is truncated to this limit to optimize LLM processing.
+</ParamField>
+
+```python
+from extractor import Extractor
+
+# Use default settings
+extractor = Extractor()
+
+# Custom timeout and character limit
+extractor = Extractor(timeout=10, max_chars=15000)
+
+# Quick extraction with lower limits
+extractor = Extractor(timeout=3, max_chars=5000)
+```
+
+<Info>
+The default `max_chars=10000` is optimized for LLM context windows while capturing sufficient content for accurate evaluation.
+</Info>
+
+## Methods
+
+### process()
+
+Main extraction method with intelligent routing and fallback logic.
+
+<ParamField path="url" type="string" required>
+  The URL to extract content from. Supports HTTP, HTTPS, and special handling for Facebook URLs.
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="result" type="dict">
+  Extraction result with the following fields:
+  
+  <Expandable title="Standard Result Fields">
+    <ResponseField name="url" type="string">
+      The processed URL
+    </ResponseField>
+    
+    <ResponseField name="text" type="string">
+      Extracted and cleaned text content (truncated to max_chars)
+    </ResponseField>
+    
+    <ResponseField name="latency_fetch" type="number">
+      Total fetch time in seconds (includes retries and fallback)
+    </ResponseField>
+    
+    <ResponseField name="char_count" type="number">
+      Number of characters in the extracted text
+    </ResponseField>
+  </Expandable>
+  
+  <Expandable title="Facebook-Specific Fields">
+    <ResponseField name="platform" type="string">
+      Set to "facebook" for Facebook URLs
+    </ResponseField>
+    
+    <ResponseField name="metadata" type="object">
+      Facebook-specific metadata from the Graph API
+    </ResponseField>
+  </Expandable>
+  
+  <Expandable title="Error Result">
+    <ResponseField name="error" type="string">
+      Error message if extraction failed completely
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Raises:**
+- `Exception` - If both local extraction and Jina fallback fail and no content is retrieved
+
+<Warning>
+For Facebook URLs, the method returns different fields including platform-specific metadata. Check for the `platform` field in the result.
+</Warning>
+
+### fetch_url()
+
+Low-level method to fetch raw HTML or Markdown from a URL.
+
+<ParamField path="url" type="string" required>
+  The URL to fetch
+</ParamField>
+
+<ParamField path="use_jina" type="boolean" default="false">
+  If `true`, uses Jina AI's Reader API by prefixing the URL with `https://r.jina.ai/`
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="response" type="tuple">
+  A tuple containing:
+  <Expandable title="Tuple Elements">
+    <ResponseField name="content" type="string" index="0">
+      Raw HTML content (or Markdown if using Jina)
+    </ResponseField>
+    
+    <ResponseField name="latency" type="number" index="1">
+      Fetch time in seconds
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Raises:**
+- `Exception` - If the HTTP request fails (network error, timeout, invalid response)
+
+```python
+from extractor import Extractor
+
+extractor = Extractor()
+
+# Direct fetch
+html, latency = extractor.fetch_url("https://example.com")
+print(f"Fetched {len(html)} chars in {latency:.2f}s")
+
+# Fetch via Jina for SPA
+markdown, latency = extractor.fetch_url("https://spa-site.com", use_jina=True)
+print(f"Jina returned {len(markdown)} chars in {latency:.2f}s")
+```
+
+### clean_html()
+
+Cleans and extracts text from HTML or Markdown content.
+
+<ParamField path="content" type="string" required>
+  Raw HTML or Markdown content to clean
+</ParamField>
+
+<ParamField path="is_markdown" type="boolean" default="false">
+  If `true`, treats content as Markdown and returns as-is (stripped). If `false`, parses as HTML.
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="text" type="string">
+  Cleaned text with whitespace normalized and unwanted elements removed
+</ResponseField>
+
+```python
+from extractor import Extractor
+
+extractor = Extractor()
+
+html = "<html><body><nav>Menu</nav><p>Main content here</p><script>alert('hi')</script></body></html>"
+text = extractor.clean_html(html)
+print(text)  # "Main content here" (nav and script removed)
+
+# Markdown pass-through
+markdown = "# Title\n\nContent here"
+text = extractor.clean_html(markdown, is_markdown=True)
+print(text)  # "# Title\n\nContent here" (stripped only)
+```
+
+<Note>
+The HTML cleaner removes `<script>`, `<style>`, `<nav>`, `<footer>`, and `<header>` tags to focus on main content.
+</Note>
+
+## Usage Examples
+
+### Basic Content Extraction
+
+```python
+from extractor import Extractor
+import json
+
+extractor = Extractor()
+
+try:
+    result = extractor.process("https://example.com")
+    
+    print(f"URL: {result['url']}")
+    print(f"Characters extracted: {result['char_count']}")
+    print(f"Fetch latency: {result['latency_fetch']:.2f}s")
+    print(f"\nContent preview:\n{result['text'][:500]}...")
+    
+except Exception as e:
+    print(f"Extraction failed: {e}")
+```
+
+### Batch URL Processing
+
+```python
+from extractor import Extractor
+
+extractor = Extractor(timeout=10)
+
+urls = [
+    "https://example1.com",
+    "https://example2.com",
+    "https://example3.com"
+]
+
+results = []
+
+for url in urls:
+    try:
+        result = extractor.process(url)
+        results.append({
+            "url": url,
+            "success": True,
+            "chars": result['char_count'],
+            "latency": result['latency_fetch']
+        })
+        print(f"✓ {url} - {result['char_count']} chars in {result['latency_fetch']:.2f}s")
+    except Exception as e:
+        results.append({
+            "url": url,
+            "success": False,
+            "error": str(e)
+        })
+        print(f"✗ {url} - {e}")
+
+print(f"\nSuccessfully extracted: {sum(1 for r in results if r['success'])}/{len(urls)}")
+```
+
+### Handling Facebook URLs
+
+```python
+from extractor import Extractor
+import json
+
+extractor = Extractor()
+
+facebook_url = "https://www.facebook.com/BusinessPage"
+
+try:
+    result = extractor.process(facebook_url)
+    
+    if "error" in result:
+        print(f"Facebook extraction failed: {result['error']}")
+    else:
+        print(f"Platform: {result.get('platform')}")
+        print(f"Content: {result['text'][:200]}...")
+        print(f"\nMetadata: {json.dumps(result.get('metadata'), indent=2)}")
+        
+except Exception as e:
+    print(f"Error: {e}")
+```
+
+### Custom Extraction Settings
+
+```python
+from extractor import Extractor
+
+# Fast extraction for quick scanning
+fast_extractor = Extractor(timeout=3, max_chars=3000)
+
+# Detailed extraction for comprehensive analysis
+detailed_extractor = Extractor(timeout=15, max_chars=20000)
+
+url = "https://long-article-site.com"
+
+# Quick scan
+quick_result = fast_extractor.process(url)
+print(f"Quick: {quick_result['char_count']} chars")
+
+# Detailed extraction
+detailed_result = detailed_extractor.process(url)
+print(f"Detailed: {detailed_result['char_count']} chars")
+```
+
+### Manual Fetch and Clean
+
+```python
+from extractor import Extractor
+
+extractor = Extractor()
+
+url = "https://example.com"
+
+try:
+    # Fetch raw HTML
+    html, latency = extractor.fetch_url(url)
+    print(f"Fetched {len(html)} bytes in {latency:.2f}s")
+    
+    # Clean HTML
+    text = extractor.clean_html(html)
+    print(f"Extracted {len(text)} chars of clean text")
+    
+    # Truncate manually if needed
+    max_chars = 5000
+    truncated = text[:max_chars]
+    print(f"Truncated to {len(truncated)} chars")
+    
+except Exception as e:
+    print(f"Error: {e}")
+```
+
+## Smart Fallback Strategy
+
+The Extractor implements a two-tier extraction strategy:
+
+<Steps>
+  <Step title="Primary: Direct HTTP">
+    Attempts direct HTTP fetch with custom headers to simulate a real browser
+  </Step>
+  
+  <Step title="Content Validation">
+    Checks if extracted content is substantial (>200 characters)
+  </Step>
+  
+  <Step title="Fallback Trigger">
+    If content < 200 chars or primary fetch fails, triggers Jina AI fallback
+  </Step>
+  
+  <Step title="Jina AI Reader">
+    Uses Jina's headless browser service to render JavaScript and extract content
+  </Step>
+  
+  <Step title="Result Assembly">
+    Returns the best available content with cumulative latency tracking
+  </Step>
+</Steps>
+
+<Info>
+The 200-character threshold detects minimal pages (logo + title only) that indicate JavaScript rendering is needed.
+</Info>
+
+## Facebook Integration
+
+For Facebook URLs, the Extractor routes to a specialized Facebook client:
+
+```python
+from facebook_client import get_facebook_page_data
+
+# Automatically called for facebook.com URLs
+result = extractor.process("https://www.facebook.com/PageName")
+
+if "platform" in result and result["platform"] == "facebook":
+    # Facebook-specific handling
+    metadata = result.get("metadata", {})
+    print(f"Page info: {metadata}")
+```
+
+<Warning>
+Facebook extraction requires the Graph API and may return an error structure if the API call fails. Always check for the `error` field in the result.
+</Warning>
+
+## HTTP Headers
+
+The Extractor sends browser-like headers to avoid bot detection:
+
+```python
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+```
+
+## Cleaning Process
+
+The HTML cleaner performs the following operations:
+
+1. **Parse HTML** with BeautifulSoup
+2. **Remove Elements**: `<script>`, `<style>`, `<nav>`, `<footer>`, `<header>`
+3. **Extract Text** with space separators
+4. **Normalize Whitespace**: Strip lines and remove double spaces
+5. **Join Lines** with newline characters
+6. **Return Clean Text**
+
+## Performance Characteristics
+
+- **Local Fetch**: 0.5-2 seconds typical
+- **Jina Fallback**: 2-5 seconds typical
+- **Facebook API**: 1-3 seconds typical
+- **Memory Usage**: Minimal (content truncated to max_chars)
+
+<Info>
+Total latency is tracked across all attempts and fallbacks, providing accurate performance metrics.
+</Info>
+
+## Error Handling
+
+- Network errors trigger fallback before raising exceptions
+- Facebook API errors return error structures instead of raising
+- Both primary and fallback failures result in a descriptive exception
+- All errors are logged at WARNING level
+
+## Command-Line Usage
+
+The Extractor can be run standalone for testing:
+
+```bash
+python extractor.py https://example.com
+```
+
+Output:
+```
+URL: https://example.com
+Latency: 1.23s
+Chars: 8543
+--------------------
+Example Domain This domain is for use in illustrative examples...
+```
+
+## Related Components
+
+- [LeadEngine](/api/lead-engine) - Uses Extractor as the first pipeline stage
+- [Evaluator](/api/evaluator) - Processes extracted content for AI analysis

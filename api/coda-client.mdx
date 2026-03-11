@@ -1,0 +1,499 @@
+---
+title: 'CodaClient'
+description: 'CRM integration layer for syncing lead evaluations to Coda tables'
+icon: 'database'
+---
+
+## Overview
+
+The `CodaClient` class provides a robust integration layer with Coda's API for syncing lead evaluation data to your CRM. It handles authentication, column mapping, duplicate detection, and error recovery with detailed error reporting.
+
+## Constructor
+
+### CodaClient()
+
+Creates a new Coda client instance using credentials from environment variables.
+
+```python
+from coda_client import CodaClient
+
+client = CodaClient()
+```
+
+**Environment Variables Required:**
+
+<ParamField path="CODA_API_TOKEN" type="string" required>
+  Your Coda API token. Generate at [coda.io/account](https://coda.io/account)
+</ParamField>
+
+<ParamField path="CODA_DOC_ID" type="string" required>
+  The Coda document ID. Found in your Coda document URL: `https://coda.io/d/[DOC_ID]`
+</ParamField>
+
+<ParamField path="CODA_TABLE_ID" type="string" required>
+  The table ID within your Coda doc. Found in the table URL or via the API
+</ParamField>
+
+**Initialization Behavior:**
+- Constructor succeeds even if environment variables are missing
+- Missing credentials cause methods to fail when called
+- Allows initialization without blocking application startup
+
+<Warning>
+Generate your Coda API token at [coda.io/account](https://coda.io/account) under "API Settings". Keep your token secure and never commit it to version control.
+</Warning>
+
+## Methods
+
+### insert_row()
+
+Inserts a new lead evaluation into your Coda table.
+
+<ParamField path="evaluation_data" type="dict" required>
+  The evaluation result dictionary from the Evaluator. Expected fields:
+  
+  <Expandable title="Expected Fields">
+    <ParamField path="url" type="string">
+      Business website URL
+    </ParamField>
+    <ParamField path="business_name" type="string">
+      Extracted business name
+    </ParamField>
+    <ParamField path="business_type" type="string">
+      Business category
+    </ParamField>
+    <ParamField path="primary_service" type="string">
+      Primary service offering
+    </ParamField>
+    <ParamField path="secondary_service" type="string" optional>
+      Secondary service offering
+    </ParamField>
+    <ParamField path="fit_score" type="number">
+      Lead quality score (0-100)
+    </ParamField>
+    <ParamField path="reasoning" type="string">
+      AI-generated reasoning
+    </ParamField>
+    <ParamField path="outreach_angle" type="string">
+      Suggested outreach approach
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="response" type="dict">
+  Coda API response containing the created row information
+</ResponseField>
+
+**Raises:**
+- `ValueError` - If Coda credentials are incomplete in environment variables
+- `Exception` - If the Coda API request fails with error details
+
+```python
+from coda_client import CodaClient
+
+client = CodaClient()
+
+evaluation = {
+    "url": "https://example.com",
+    "business_name": "Example Plumbing",
+    "business_type": "Local Service Business",
+    "primary_service": "Plumbing",
+    "secondary_service": "HVAC",
+    "fit_score": 85,
+    "reasoning": "Strong local presence with target service offerings",
+    "outreach_angle": "Highlight automated scheduling and customer management"
+}
+
+try:
+    response = client.insert_row(evaluation)
+    print(f"Row created successfully: {response}")
+except ValueError as e:
+    print(f"Configuration error: {e}")
+except Exception as e:
+    print(f"Insert failed: {e}")
+```
+
+<Note>
+The method automatically filters columns to match your Coda table schema. Missing columns are skipped with a console warning.
+</Note>
+
+### fetch_row_by_url()
+
+Checks if a lead with the given URL already exists in your Coda table.
+
+<ParamField path="url" type="string" required>
+  The business URL to check for duplicates
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="exists" type="boolean">
+  `True` if a row with the URL exists, `False` otherwise
+</ResponseField>
+
+```python
+from coda_client import CodaClient
+
+client = CodaClient()
+
+url = "https://example.com"
+
+if client.fetch_row_by_url(url):
+    print(f"Duplicate found: {url} already exists in CRM")
+else:
+    print(f"No duplicate: {url} is new")
+    # Proceed with insertion
+```
+
+<Info>
+This method returns `False` if credentials are missing or if the API call fails, allowing graceful degradation.
+</Info>
+
+## Usage Examples
+
+### Complete Integration Flow
+
+```python
+from coda_client import CodaClient
+from evaluator import Evaluator
+from extractor import Extractor
+
+# Initialize components
+extractor = Extractor()
+evaluator = Evaluator()
+client = CodaClient()
+
+url = "https://example-business.com"
+
+try:
+    # Check for duplicates first
+    if client.fetch_row_by_url(url):
+        print(f"Skipping {url} - already in CRM")
+    else:
+        # Extract and evaluate
+        extracted = extractor.process(url)
+        content = extracted.get("text", "")
+        
+        evaluation = evaluator.evaluate(content)
+        evaluation["url"] = url
+        
+        # Insert into Coda
+        response = client.insert_row(evaluation)
+        print(f"✓ Added {evaluation['business_name']} to CRM")
+        print(f"  Score: {evaluation['fit_score']}/100")
+        print(f"  Service: {evaluation['primary_service']}")
+        
+except Exception as e:
+    print(f"Error processing {url}: {e}")
+```
+
+### Batch Insert with Error Tracking
+
+```python
+from coda_client import CodaClient
+
+client = CodaClient()
+
+evaluations = [
+    # ... list of evaluation dicts
+]
+
+successes = []
+failures = []
+duplicates = []
+
+for eval_data in evaluations:
+    url = eval_data.get("url")
+    
+    try:
+        # Check duplicates
+        if client.fetch_row_by_url(url):
+            duplicates.append(url)
+            continue
+        
+        # Insert
+        response = client.insert_row(eval_data)
+        successes.append(url)
+        
+    except Exception as e:
+        failures.append({"url": url, "error": str(e)})
+
+print(f"Results:")
+print(f"  Inserted: {len(successes)}")
+print(f"  Duplicates: {len(duplicates)}")
+print(f"  Failures: {len(failures)}")
+
+if failures:
+    print(f"\nFailed insertions:")
+    for failure in failures:
+        print(f"  {failure['url']}: {failure['error']}")
+```
+
+### Custom Column Mapping
+
+```python
+from coda_client import CodaClient
+
+client = CodaClient()
+
+# Check what columns exist in your table
+columns = client._get_columns()
+if columns:
+    print(f"Available columns: {', '.join(columns)}")
+
+# Insert with only available fields
+evaluation = {
+    "url": "https://example.com",
+    "business_name": "Example Co",
+    "fit_score": 75,
+    "reasoning": "Good fit for our services"
+}
+
+try:
+    response = client.insert_row(evaluation)
+    print("Insert successful")
+except Exception as e:
+    print(f"Error: {e}")
+```
+
+### Handling Missing Credentials
+
+```python
+from coda_client import CodaClient
+import os
+
+# Check credentials before using client
+if not all([os.getenv("CODA_API_TOKEN"), 
+            os.getenv("CODA_DOC_ID"),
+            os.getenv("CODA_TABLE_ID")]):
+    print("Warning: Coda credentials incomplete. CRM sync disabled.")
+    client = None
+else:
+    client = CodaClient()
+
+# Use client conditionally
+if client:
+    try:
+        response = client.insert_row(evaluation_data)
+        print("Synced to CRM")
+    except Exception as e:
+        print(f"CRM sync failed: {e}")
+else:
+    print("Skipping CRM sync (credentials not configured)")
+```
+
+## Column Mapping
+
+The client maps evaluation fields to Coda columns:
+
+| Evaluation Field | Coda Column | Type |
+|-----------------|-------------|------|
+| `url` | Business URL | Text |
+| `business_name` | Business Name | Text |
+| `business_type` | Business Type | Text |
+| `primary_service` | Primary Service | Text |
+| `secondary_service` | Secondary Service | Text |
+| `fit_score` | Fit Score | Number |
+| `reasoning` | Reasoning | Text |
+| `outreach_angle` | Outreach Angle | Text |
+
+<Warning>
+Your Coda table must have columns with these exact names for automatic mapping to work. The client fetches actual columns and skips any that don't exist.
+</Warning>
+
+## Setting Up Your Coda Table
+
+<Steps>
+  <Step title="Create a Coda Document">
+    Go to [coda.io](https://coda.io) and create a new doc
+  </Step>
+  
+  <Step title="Add a Table">
+    Insert a table with the following columns:
+    - Business URL (Text)
+    - Business Name (Text)
+    - Business Type (Text)
+    - Primary Service (Text)
+    - Secondary Service (Text)
+    - Fit Score (Number)
+    - Reasoning (Text)
+    - Outreach Angle (Text)
+  </Step>
+  
+  <Step title="Get Your Doc ID">
+    Copy the doc ID from the URL: `https://coda.io/d/[DOC_ID]`
+  </Step>
+  
+  <Step title="Get Your Table ID">
+    Click the table options menu → "Copy table ID" or use the API to list tables
+  </Step>
+  
+  <Step title="Generate API Token">
+    Go to [coda.io/account](https://coda.io/account) → API Settings → Generate new token
+  </Step>
+  
+  <Step title="Set Environment Variables">
+    Add to your `.env` file:
+    ```bash
+    CODA_API_TOKEN=your-token-here
+    CODA_DOC_ID=your-doc-id
+    CODA_TABLE_ID=your-table-id
+    ```
+  </Step>
+</Steps>
+
+## API Reference
+
+### Coda API Endpoints Used
+
+**List Columns:**
+```
+GET https://coda.io/apis/v1/docs/{doc_id}/tables/{table_id}/columns
+```
+
+**Query Rows:**
+```
+GET https://coda.io/apis/v1/docs/{doc_id}/tables/{table_id}/rows
+  ?query=Business URL:"{url}"
+  &limit=1
+```
+
+**Insert Row:**
+```
+POST https://coda.io/apis/v1/docs/{doc_id}/tables/{table_id}/rows
+Body: {
+  "rows": [{
+    "cells": [
+      {"column": "Business URL", "value": "https://example.com"},
+      ...
+    ]
+  }]
+}
+```
+
+## Error Handling
+
+The client provides detailed error messages:
+
+```python
+try:
+    response = client.insert_row(evaluation_data)
+except ValueError as e:
+    # Configuration errors
+    print(f"Config error: {e}")
+    # Example: "Coda configuration (Token, Doc ID, Table ID) is incomplete in .env."
+    
+except Exception as e:
+    # API errors with details
+    print(f"API error: {e}")
+    # Example: "Coda API Error: 401 Unauthorized | Details: Invalid token"
+```
+
+Error messages include:
+- HTTP status codes
+- Coda API error messages (first 200 chars)
+- Context about which operation failed
+
+<Note>
+API errors are logged using Python's logging module at ERROR level for debugging.
+</Note>
+
+## Null Value Handling
+
+The client automatically converts `None` values to empty strings:
+
+```python
+evaluation = {
+    "url": "https://example.com",
+    "business_name": "Example Co",
+    "secondary_service": None,  # Will be converted to ""
+    "fit_score": 80
+}
+
+client.insert_row(evaluation)  # Success - None converted to ""
+```
+
+<Info>
+Coda's API rejects `null` values, so the client sanitizes all values before sending.
+</Info>
+
+## Rate Limits
+
+<Warning>
+Coda API rate limits (as of 2024):
+- **Free tier**: 100 requests/minute, 10,000 requests/day
+- **Paid tier**: 1,000 requests/minute, 100,000 requests/day
+
+Implement rate limiting in your application if processing large batches.
+</Warning>
+
+Example rate limiting:
+
+```python
+import time
+from coda_client import CodaClient
+
+client = CodaClient()
+evaluations = [...]  # Large list
+
+for i, evaluation in enumerate(evaluations):
+    try:
+        client.insert_row(evaluation)
+        
+        # Rate limit: 50 requests per minute
+        if (i + 1) % 50 == 0:
+            print(f"Processed {i + 1}, sleeping 60s for rate limit...")
+            time.sleep(60)
+            
+    except Exception as e:
+        print(f"Error: {e}")
+```
+
+## Timeout Configuration
+
+All API requests use a timeout:
+
+- **Column fetch**: 10 seconds
+- **Row query**: 10 seconds  
+- **Row insert**: 15 seconds
+
+Timeouts prevent hanging on slow network connections.
+
+## Testing
+
+Test your Coda integration:
+
+```python
+from coda_client import CodaClient
+
+client = CodaClient()
+
+# Test data
+mock_data = {
+    "url": "https://test.com",
+    "business_name": "Test Business",
+    "business_type": "Test Type",
+    "primary_service": "Test Service",
+    "fit_score": 90,
+    "reasoning": "Test reasoning",
+    "outreach_angle": "Test hook"
+}
+
+try:
+    # Check if test row exists
+    if client.fetch_row_by_url(mock_data["url"]):
+        print("Test row already exists")
+    else:
+        # Insert test row
+        response = client.insert_row(mock_data)
+        print(f"Test successful: {response}")
+except Exception as e:
+    print(f"Test failed: {e}")
+```
+
+## Related Components
+
+- [LeadEngine](/api/lead-engine) - Uses CodaClient for CRM sync in the pipeline
+- [Evaluator](/api/evaluator) - Generates the evaluation data inserted by CodaClient

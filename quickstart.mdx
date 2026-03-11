@@ -1,80 +1,240 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quickstart Guide"
+description: "Analyze your first business URL in under 2 minutes"
 ---
 
-## Get started in three steps
+## Prerequisites
 
-Get your documentation site running locally and make your first customization.
+Before you start, make sure you have:
 
-### Step 1: Set up your local environment
+<Steps>
+  <Step title="Python 3.7+">
+    Check your version:
+    ```bash
+    python --version
+    ```
+  </Step>
+  <Step title="Groq API Key">
+    Sign up at [console.groq.com](https://console.groq.com) and create an API key.
+  </Step>
+  <Step title="Coda Credentials">
+    You'll need a Coda API token, document ID, and table ID. See [Coda Integration](/guides/coda-integration) for setup.
+  </Step>
+</Steps>
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+<Warning>
+If you don't have Coda credentials yet, you can still test extraction and evaluation - the engine will skip CRM insertion gracefully.
+</Warning>
 
-### Step 2: Deploy your changes
+## Installation
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+Clone the repository and install dependencies:
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+<CodeGroup>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+```bash Linux/Mac
+git clone https://github.com/Fezi-x/Lead-Intelligence-Engine.git
+cd Lead-Intelligence-Engine
 
-### Step 3: Go live
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+# Install dependencies
+pip install requests beautifulsoup4 python-dotenv groq python-telegram-bot
+```
 
-## Next steps
+```powershell Windows
+git clone https://github.com/Fezi-x/Lead-Intelligence-Engine.git
+cd Lead-Intelligence-Engine
 
-Now that you have your docs running, explore these key features:
+# Create virtual environment
+python -m venv venv
+.\venv\Scripts\activate
+
+# Install dependencies
+pip install requests beautifulsoup4 python-dotenv groq python-telegram-bot
+```
+
+</CodeGroup>
+
+## Configuration
+
+Create a `.env` file in the project root:
+
+```env .env
+GROQ_API_KEY=your_groq_api_key_here
+CODA_API_TOKEN=your_coda_token
+CODA_DOC_ID=your_doc_id
+CODA_TABLE_ID=your_table_id
+TELEGRAM_BOT_TOKEN=your_telegram_token  # Optional - only if using bot
+```
+
+<Tip>
+Start with just `GROQ_API_KEY` to test the extraction and evaluation components. Add Coda credentials when you're ready to sync leads.
+</Tip>
+
+## Analyze Your First URL
+
+Run the CLI with any business website:
+
+```bash
+python main.py https://example-business.com
+```
+
+### Expected Output
+
+The engine will display:
+
+<Tabs>
+  <Tab title="Success">
+    ```json
+    Analyzing https://example-business.com...
+
+    --- Evaluation Result ---
+    {
+      "business_name": "Example Dental Clinic",
+      "business_type": "Dental Healthcare Provider",
+      "primary_service": "Foundation Package",
+      "secondary_service": "Basic Marketing Package",
+      "fit_score": 85,
+      "reasoning": "Small clinic with Facebook-only presence. No website detected. High fit for Foundation Package.",
+      "outreach_angle": "Platform dependency risk - current growth relies on rented Facebook platform. Consider owned digital asset."
+    }
+    ------------------------
+
+    SUCCESS: ADDED TO CRM: 'Example Dental Clinic' (https://example-business.com)
+    Latency: 8.32s
+    Usage: 3247 tokens (P: 2891, C: 356)
+    ```
+  </Tab>
+  <Tab title="Duplicate Detected">
+    ```bash
+    Analyzing https://example-business.com...
+
+    --- Evaluation Result ---
+    {
+      "business_name": "Example Dental Clinic",
+      "business_type": "Dental Healthcare Provider",
+      "primary_service": "Foundation Package",
+      "fit_score": 85,
+      "reasoning": "Small clinic with Facebook-only presence..."
+    }
+    ------------------------
+
+    SKIPPED CRM INSERTION: https://example-business.com
+    Reason: Duplicate found in CRM
+    ```
+  </Tab>
+  <Tab title="Error">
+    ```bash
+    Analyzing https://invalid-url.com...
+
+    ERROR: Failed to fetch https://invalid-url.com (Jina=False): 
+    HTTPSConnectionPool(host='invalid-url.com', port=443): 
+    Max retries exceeded
+    ```
+  </Tab>
+</Tabs>
+
+## Understanding the Output
+
+The evaluation result contains:
+
+<ParamField path="business_name" type="string">
+  Extracted official name of the business from website content.
+</ParamField>
+
+<ParamField path="business_type" type="string">
+  What the business actually does (e.g., "Dental Healthcare Provider", "E-commerce Fashion Store").
+</ParamField>
+
+<ParamField path="primary_service" type="string">
+  Best-fit service from your catalog. Must match a service name in `services/services.json`.
+</ParamField>
+
+<ParamField path="secondary_service" type="string | null">
+  Optional second service for upsell or complementary offering.
+</ParamField>
+
+<ParamField path="fit_score" type="integer">
+  Confidence score from 0-100 indicating how well the service matches the business needs.
+</ParamField>
+
+<ParamField path="reasoning" type="string">
+  1-2 sentence explanation of why this service was selected.
+</ParamField>
+
+<ParamField path="outreach_angle" type="string">
+  Strategic entry point for sales conversation based on detected structural gaps.
+</ParamField>
+
+## Metadata Fields
+
+These fields (prefixed with `_`) provide execution context:
+
+- `_status`: `success` or `skipped`
+- `_message`: Reason for skipping (if applicable)
+- `_latency`: Total processing time
+- `_usage`: Token consumption breakdown
+
+## Try the Telegram Bot
+
+For interactive analysis, start the Telegram bot:
+
+```bash
+python telegram_bot.py
+```
+
+Then in Telegram:
+
+1. Find your bot by username
+2. Send `/start` to see available commands
+3. Send any business URL or use `/analyze <url>`
+
+The bot provides the same analysis with a conversational interface.
+
+<Card title="Telegram Bot Guide" icon="telegram" href="/guides/telegram-bot">
+  Learn about bot commands, rate limiting, and deployment options.
+</Card>
+
+## Next Steps
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="CLI Usage" icon="terminal" href="/guides/cli-usage">
+    Batch processing, shell scripts, and automation patterns.
+  </Card>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Customize services, knowledge base, and system prompts.
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/concepts/architecture">
+    Understand how the pipeline components work together.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/lead-engine">
+    Integrate the engine programmatically in your Python code.
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="ImportError: No module named 'groq'">
+    Make sure you activated the virtual environment and installed dependencies:
+    ```bash
+    source venv/bin/activate  # or .\venv\Scripts\activate on Windows
+    pip install groq
+    ```
+  </Accordion>
+  <Accordion title="ValueError: GROQ_API_KEY not found">
+    Check that your `.env` file exists in the project root and contains:
+    ```env
+    GROQ_API_KEY=your_actual_key_here
+    ```
+  </Accordion>
+  <Accordion title="Extraction fails with 'No content could be extracted'">
+    Some websites block scrapers or use heavy JavaScript. The engine automatically tries Jina fallback, but some sites may still fail. Try analyzing a different URL.
+  </Accordion>
+  <Accordion title="Coda API Error: 401 Unauthorized">
+    Your `CODA_API_TOKEN` is invalid or expired. Generate a new token from [coda.io/account](https://coda.io/account).
+  </Accordion>
+</AccordionGroup>
