@@ -146,6 +146,76 @@ TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
 If you only use the CLI (`main.py`), you can omit this variable.
 </Info>
 
+#### FACEBOOK_APP_ID
+
+**Purpose**: Facebook App ID for Graph API access to extract public page data
+
+**Required for**: Analyzing Facebook page URLs (e.g., `facebook.com/BusinessPage`)
+
+**How to obtain**:
+1. Create a Facebook app at [developers.facebook.com](https://developers.facebook.com)
+2. Navigate to **Settings** → **Basic**
+3. Copy the App ID
+
+**Format**: Numeric string
+
+**Example**:
+```env
+FACEBOOK_APP_ID=1234567890123456
+```
+
+<Note>
+If both `FACEBOOK_APP_ID` and `FACEBOOK_APP_SECRET` are provided, an access token is automatically generated. Alternatively, you can provide `FACEBOOK_ACCESS_TOKEN` directly.
+</Note>
+
+#### FACEBOOK_APP_SECRET
+
+**Purpose**: Facebook App Secret for access token generation
+
+**Required for**: Analyzing Facebook page URLs (works with `FACEBOOK_APP_ID`)
+
+**How to obtain**:
+1. Same Facebook app from above
+2. Navigate to **Settings** → **Basic**
+3. Click **Show** next to "App Secret"
+4. Copy the secret
+
+**Format**: Alphanumeric string
+
+**Example**:
+```env
+FACEBOOK_APP_SECRET=a1b2c3d4e5f6789012345678901234567890abcd
+```
+
+<Warning>
+Keep App Secret confidential. Never commit to version control or share publicly.
+</Warning>
+
+#### FACEBOOK_ACCESS_TOKEN
+
+**Purpose**: Pre-generated Facebook Graph API access token (alternative to App ID/Secret)
+
+**Required for**: Analyzing Facebook page URLs (alternative to using App ID + Secret)
+
+**How to obtain**:
+1. Use [Graph API Explorer](https://developers.facebook.com/tools/explorer/)
+2. Select your app
+3. Generate a token with public page permissions
+4. Copy the token
+
+**Format**: Long alphanumeric string
+
+**Example**:
+```env
+FACEBOOK_ACCESS_TOKEN=EAABsbCS1iHgBO7ZCZBqzXYZ...
+```
+
+<Info>
+**Auto-generation**: If `FACEBOOK_ACCESS_TOKEN` is not provided but both `FACEBOOK_APP_ID` and `FACEBOOK_APP_SECRET` are set, the engine automatically generates a token in the format `{APP_ID}|{APP_SECRET}`. This is suitable for accessing public page data.
+</Info>
+
+**Fallback behavior**: If no Facebook credentials are provided, Facebook URLs will fail gracefully with an error message: "Missing Facebook API credentials".
+
 ## Service Configuration
 
 The engine's service offerings are defined in `services/services.json`. This file controls which services the AI can recommend.
